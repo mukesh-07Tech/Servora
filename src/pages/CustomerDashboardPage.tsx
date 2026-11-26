@@ -36,7 +36,7 @@ import {
   XCircle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { getCached, submitOrderCancellationRequest, lookupMenuItemPrice } from '../lib/data';
+import { getCached, submitOrderCancellationRequest, lookupMenuItemPrice, updateOrderPaymentStatus } from '../lib/data';
 
 export function CustomerDashboardPage({
   setNotice
@@ -2096,8 +2096,9 @@ Thank you for dining at Servora!
                             });
                           }
                         } else {
-                          if (supabase) {
-                            await supabase.from('orders').update({ payment_method: payMethod, payment_status: 'paid', status: 'completed' }).in('id', selectedBillIds);
+                          for (const sid of selectedBillIds) {
+                            await updateOrderPaymentStatus(sid, 'paid', payMethod, true);
+                            try { localStorage.setItem(`servora_order_paid_${sid}`, 'paid'); } catch { }
                           }
                           if (setNotice) {
                             setNotice({
@@ -2118,11 +2119,8 @@ Thank you for dining at Servora!
                             });
                           }
                         } else {
-                          if (supabase && activeOrder?.id) {
-                            await supabase
-                              .from('orders')
-                              .update({ payment_status: 'paid', status: 'completed' })
-                              .eq('id', activeOrder.id);
+                          if (activeOrder?.id) {
+                            await updateOrderPaymentStatus(activeOrder.id, 'paid', payMethod, true);
                           }
                           try {
                             localStorage.setItem(`servora_order_paid_${activeOrder.id}`, 'paid');

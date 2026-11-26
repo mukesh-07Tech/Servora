@@ -513,6 +513,50 @@ export async function getLeaveRequests(forceRefresh = false) {
 // 4. Mutations & Automatic Cache Busting
 // ==========================================
 
+export async function updateOrderPaymentStatus(
+  orderId: string,
+  paymentStatus: 'paid' | 'unpaid' | 'pending' = 'paid',
+  paymentMethod: string = 'cash',
+  markCompleted = true
+) {
+  if (!supabase) throw new Error('Supabase not configured');
+
+  // Try RPC first for guaranteed security definer update
+  try {
+    const { data: rpcRes, error: rpcErr } = await supabase.rpc('mark_order_payment', {
+      p_order_id: orderId,
+      p_payment_status: paymentStatus,
+      p_payment_method: paymentMethod,
+      p_mark_completed: markCompleted
+    });
+    if (!rpcErr && rpcRes?.success) {
+      invalidateCache('orders');
+      invalidateCache('orders_all');
+      invalidateCache('orders_active');
+      return rpcRes;
+    }
+  } catch (e) {
+    console.warn('mark_order_payment RPC fallback to direct update:', e);
+  }
+
+  const payload: any = {
+    payment_status: paymentStatus,
+    payment_method: paymentMethod,
+    updated_at: new Date().toISOString()
+  };
+  if (markCompleted && paymentStatus === 'paid') {
+    payload.status = 'completed';
+  }
+
+  const { data, error } = await supabase.from('orders').update(payload).eq('id', orderId).select();
+  if (error) throw error;
+
+  invalidateCache('orders');
+  invalidateCache('orders_all');
+  invalidateCache('orders_active');
+  return data;
+}
+
 export async function updateOrderStatus(orderId: string, status: string) {
   if (!supabase) throw new Error('Supabase not configured');
   const { data, error } = await supabase.from('orders').update({ status, updated_at: new Date().toISOString() }).eq('id', orderId).select();

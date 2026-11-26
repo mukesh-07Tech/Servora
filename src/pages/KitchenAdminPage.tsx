@@ -27,7 +27,7 @@ import {
   Utensils,
   X
 } from 'lucide-react';
-import { getCached, getOrders, getStaffList, updateOrderStatus, getPendingCancellationRequests, approveOrderCancellation, rejectOrderCancellation, CancellationRequestInfo } from '../lib/data';
+import { getCached, getOrders, getStaffList, updateOrderStatus, updateOrderPaymentStatus, getPendingCancellationRequests, approveOrderCancellation, rejectOrderCancellation, CancellationRequestInfo } from '../lib/data';
 import { supabase } from '../lib/supabase';
 
 export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }) {
@@ -1599,9 +1599,10 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
                       <button
                         type="button"
                         onClick={async () => {
-                          if (supabase && selectedHistoryOrder.id) {
-                            await supabase.from('orders').update({ payment_status: 'paid', status: 'completed' }).eq('id', selectedHistoryOrder.id);
-                            setSelectedHistoryOrder((prev: any) => ({ ...prev, payment_status: 'paid' }));
+                          if (selectedHistoryOrder.id) {
+                            await updateOrderPaymentStatus(selectedHistoryOrder.id, 'paid', 'cash', true);
+                            try { localStorage.setItem(`servora_order_paid_${selectedHistoryOrder.id}`, 'paid'); } catch { }
+                            setSelectedHistoryOrder((prev: any) => ({ ...prev, payment_status: 'paid', status: 'completed' }));
                             loadData(true);
                           }
                         }}

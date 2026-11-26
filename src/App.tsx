@@ -77,7 +77,7 @@ import {
   XCircle,
   Zap
 } from 'lucide-react';
-import { getMenu, getOrders, getStaffList, getStations, getTables, resolveTableToken, updateOrderStatus, updateTicketItem, submitOrderCancellationRequest, getPendingCancellationRequests, approveOrderCancellation, rejectOrderCancellation, CancellationRequestInfo } from './lib/data';
+import { getMenu, getOrders, getStaffList, getStations, getTables, resolveTableToken, updateOrderStatus, updateTicketItem, updateOrderPaymentStatus, submitOrderCancellationRequest, getPendingCancellationRequests, approveOrderCancellation, rejectOrderCancellation, CancellationRequestInfo } from './lib/data';
 import { AppRole, CartLine, MenuItem, StaffProfile, supabase, supabaseConfigured, money } from './lib/supabase';
 import QRCode from 'qrcode';
 import { DashboardOverview } from './pages/DashboardOverview';
@@ -3966,9 +3966,10 @@ function Kitchen({
                       <button
                         type="button"
                         onClick={async () => {
-                          if (supabase && selectedHistoryOrder.id) {
-                            await supabase.from('orders').update({ payment_status: 'paid', status: 'completed' }).eq('id', selectedHistoryOrder.id);
-                            setSelectedHistoryOrder((prev: any) => ({ ...prev, payment_status: 'paid' }));
+                          if (selectedHistoryOrder.id) {
+                            await updateOrderPaymentStatus(selectedHistoryOrder.id, 'paid', 'cash', true);
+                            try { localStorage.setItem(`servora_order_paid_${selectedHistoryOrder.id}`, 'paid'); } catch { }
+                            setSelectedHistoryOrder((prev: any) => ({ ...prev, payment_status: 'paid', status: 'completed' }));
                             refresh();
                           }
                         }}
@@ -8062,18 +8063,11 @@ function CustomerPage({
                   try {
                     if (supabase && order.id) {
                       if (payMethod === 'cash') {
-                        await supabase.from('orders').update({
-                          payment_method: 'cash',
-                          payment_status: 'unpaid'
-                        }).eq('id', order.id);
+                        await updateOrderPaymentStatus(order.id, 'unpaid', 'cash', false);
                         setLiveOrder((prev: any) => ({ ...prev, payment_method: 'cash' }));
                         notify(setNotice, `Cash payment confirmed. Your server will collect ₹${totVal.toFixed(2)} at Table ${tableDisplay} and settle the bill.`, 'success');
                       } else {
-                        await supabase.from('orders').update({
-                          payment_method: payMethod,
-                          payment_status: 'paid',
-                          status: 'completed'
-                        }).eq('id', order.id);
+                        await updateOrderPaymentStatus(order.id, 'paid', payMethod, true);
                         try {
                           localStorage.setItem(`servora_order_paid_${order.id}`, 'paid');
                         } catch { }

@@ -23,7 +23,7 @@ import {
   X,
   AlertTriangle
 } from 'lucide-react';
-import { DEFAULT_MENU, getCached, getMenu, getOrders, updateOrderStatus, getPendingCancellationRequests, approveOrderCancellation, rejectOrderCancellation, CancellationRequestInfo } from '../lib/data';
+import { DEFAULT_MENU, getCached, getMenu, getOrders, updateOrderStatus, updateOrderPaymentStatus, getPendingCancellationRequests, approveOrderCancellation, rejectOrderCancellation, CancellationRequestInfo } from '../lib/data';
 import { money, supabase } from '../lib/supabase';
 
 // High-resolution authentic food imagery map for South Indian cuisine
@@ -815,10 +815,9 @@ Total: ₹${Number(activeOrder.total || 0).toFixed(2)}
                       if (!activeOrder?.id) return;
                       setUpdating(true);
                       try {
-                        if (supabase) {
-                          await supabase.from('orders').update({ payment_status: 'paid' }).eq('id', activeOrder.id);
-                        }
-                        setSelectedOrder((prev: any) => prev ? { ...prev, payment_status: 'paid' } : null);
+                        await updateOrderPaymentStatus(activeOrder.id, 'paid', 'cash', true);
+                        try { localStorage.setItem(`servora_order_paid_${activeOrder.id}`, 'paid'); } catch { }
+                        setSelectedOrder((prev: any) => prev ? { ...prev, payment_status: 'paid', status: 'completed' } : null);
                         if (setNotice) setNotice({ text: `Order #SVR${activeOrder.order_number} marked as Paid (Offline Cash / Counter settled).`, kind: 'success' });
                         await loadData();
                       } catch (err: any) {
