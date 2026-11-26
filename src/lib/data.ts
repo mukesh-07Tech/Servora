@@ -541,14 +541,19 @@ export async function updateOrderPaymentStatus(
 
   const payload: any = {
     payment_status: paymentStatus,
-    payment_method: paymentMethod,
     updated_at: new Date().toISOString()
   };
   if (markCompleted && paymentStatus === 'paid') {
     payload.status = 'completed';
   }
 
-  const { data, error } = await supabase.from('orders').update(payload).eq('id', orderId).select();
+  // Attempt direct update; if payment_method column exists, include it gracefully
+  let { data, error } = await supabase.from('orders').update({ ...payload, payment_method: paymentMethod }).eq('id', orderId).select();
+  if (error) {
+    const res = await supabase.from('orders').update(payload).eq('id', orderId).select();
+    data = res.data;
+    error = res.error;
+  }
   if (error) throw error;
 
   invalidateCache('orders');

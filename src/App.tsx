@@ -3966,11 +3966,15 @@ function Kitchen({
                       <button
                         type="button"
                         onClick={async () => {
-                          if (selectedHistoryOrder.id) {
-                            await updateOrderPaymentStatus(selectedHistoryOrder.id, 'paid', 'cash', true);
-                            try { localStorage.setItem(`servora_order_paid_${selectedHistoryOrder.id}`, 'paid'); } catch { }
+                          if (!selectedHistoryOrder?.id) return;
+                          try {
                             setSelectedHistoryOrder((prev: any) => ({ ...prev, payment_status: 'paid', status: 'completed' }));
+                            try { localStorage.setItem(`servora_order_paid_${selectedHistoryOrder.id}`, 'paid'); } catch { }
+                            await updateOrderPaymentStatus(selectedHistoryOrder.id, 'paid', 'cash', true);
+                            if (setNotice) notify(setNotice, `Order #${selectedHistoryOrder.order_number} marked as Paid & Settled.`, 'success');
                             refresh();
+                          } catch (err: any) {
+                            if (setNotice) notify(setNotice, err.message || 'Could not update payment status.', 'error');
                           }
                         }}
                         style={{

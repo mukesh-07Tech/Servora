@@ -1599,11 +1599,18 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
                       <button
                         type="button"
                         onClick={async () => {
-                          if (selectedHistoryOrder.id) {
-                            await updateOrderPaymentStatus(selectedHistoryOrder.id, 'paid', 'cash', true);
-                            try { localStorage.setItem(`servora_order_paid_${selectedHistoryOrder.id}`, 'paid'); } catch { }
+                          if (!selectedHistoryOrder?.id) return;
+                          try {
+                            // Optimistic update
                             setSelectedHistoryOrder((prev: any) => ({ ...prev, payment_status: 'paid', status: 'completed' }));
-                            loadData(true);
+                            setOrders((prev: any[]) => prev.map(o => o.id === selectedHistoryOrder.id ? { ...o, payment_status: 'paid', status: 'completed' } : o));
+                            try { localStorage.setItem(`servora_order_paid_${selectedHistoryOrder.id}`, 'paid'); } catch { }
+                            
+                            await updateOrderPaymentStatus(selectedHistoryOrder.id, 'paid', 'cash', true);
+                            if (setNotice) setNotice({ text: `Order #${selectedHistoryOrder.order_number} marked as Paid & Settled (Offline).`, kind: 'success' });
+                            await loadData(true);
+                          } catch (err: any) {
+                            if (setNotice) setNotice({ text: err.message || 'Could not update payment status.', kind: 'error' });
                           }
                         }}
                         style={{
