@@ -1,0 +1,14 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+const cors={ 'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization, x-client-info, apikey, content-type','Access-Control-Allow-Methods':'POST, OPTIONS' };
+const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...cors,'Content-Type':'application/json'}});
+const hash=async(v:string)=>{const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')};
+Deno.serve(async(req)=>{if(req.method==='OPTIONS')return new Response('ok',{headers:cors});try{
+ const auth=req.headers.get('Authorization')||'';const db=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_ANON_KEY')!,{global:{headers:{Authorization:auth}}});const {data:{user},error:ue}=await db.auth.getUser();if(ue||!user)return json({error:'Sign in required.'},401);
+ const {data:profile,error:pe}=await db.from('profiles').select('id,restaurant_id,approval_status,role').eq('id',user.id).single();if(pe||profile.approval_status!=='approved'||!['admin','kitchen','employee'].includes(profile.role))return json({error:'Approved staff access required.'},403);
+ const {action,code}=await req.json();if(!['check_in','check_out'].includes(action)||!/^[A-Z0-9]{8}$/.test(String(code||'')))return json({error:'Enter a valid eight-character attendance code.'},400);
+ const admin=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);const {data:daily,error:de}=await admin.from('attendance_daily_codes').select('id,work_date').eq('restaurant_id',profile.restaurant_id).eq('code_hash',await hash(code)).eq('is_active',true).gt('expires_at',new Date().toISOString()).maybeSingle();if(de||!daily)return json({error:'Invalid or expired attendance code.'},400);
+ const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata'}).format(new Date());if(daily.work_date!==today)return json({error:'This code is not valid for today.'},400);
+ const {data:existing}=await admin.from('attendance_records').select('*').eq('employee_id',user.id).eq('work_date',today).maybeSingle();const now=new Date().toISOString();
+ if(action==='check_in'){if(existing?.check_in)return json({error:'You have already checked in today.'},409);const {error}=await admin.from('attendance_records').insert({restaurant_id:profile.restaurant_id,employee_id:user.id,work_date:today,check_in:now,verification_method:'manual'});if(error)throw error;return json({success:true})}
+ if(!existing?.check_in)return json({error:'Check in before checking out.'},400);if(existing.check_out)return json({error:'You have already checked out today.'},409);const {error}=await admin.from('attendance_records').update({check_out:now}).eq('id',existing.id);if(error)throw error;return json({success:true});
+ }catch(e){return json({error:e.message||'Attendance action failed.'},400)}});
