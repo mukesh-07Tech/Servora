@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   Activity,
   AlertCircle,
+  AlertTriangle,
   ArrowLeft,
   Award,
   Bell,
@@ -31,10 +32,11 @@ import {
   Users,
   Utensils,
   Wallet,
-  X
+  X,
+  XCircle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { getCached } from '../lib/data';
+import { getCached, submitOrderCancellationRequest } from '../lib/data';
 
 export function CustomerDashboardPage({
   setNotice
@@ -94,6 +96,14 @@ export function CustomerDashboardPage({
 
   // Request help busy state
   const [helpBusy, setHelpBusy] = useState<string | null>(null);
+
+  // Cancellation states
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelReason, setCancelReason] = useState('Ordered by mistake / wrong dish');
+  const [customCancelReason, setCustomCancelReason] = useState('');
+  const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
+  const [cancellationRequested, setCancellationRequested] = useState(false);
+  const [cancellationRejected, setCancellationRejected] = useState(false);
 
   // 1. Load customer data from Supabase
   const loadCustomerData = async () => {
@@ -190,6 +200,28 @@ export function CustomerDashboardPage({
 
       setPastOrders(orderList);
 
+      if (foundOrder) {
+        if (foundOrder.status === 'cancelled') {
+          setCancellationRequested(false);
+        } else {
+          const { data: sReqs } = await supabase
+            .from('service_requests')
+            .select('*')
+            .ilike('note', `%${foundOrder.id}%`)
+            .order('created_at', { ascending: false })
+            .limit(1);
+          if (sReqs && sReqs.length > 0) {
+            const req = sReqs[0];
+            if (req.status === 'new') {
+              setCancellationRequested(true);
+            } else if (req.note?.includes('[CANCEL_REJECTED]') || req.status === 'cancelled') {
+              setCancellationRequested(false);
+              if (foundOrder.status !== 'cancelled') setCancellationRejected(true);
+            }
+          }
+        }
+      }
+
       // If no order is found at all, show the empty state cleanly
       if (!foundOrder) {
         setActiveOrder(null);
@@ -235,6 +267,9 @@ export function CustomerDashboardPage({
       .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, () => {
         loadCustomerData();
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'service_requests' }, () => {
+        loadCustomerData();
+      })
       .subscribe();
 
     return () => {
@@ -278,6 +313,29 @@ export function CustomerDashboardPage({
       if (setNotice) setNotice({ text: e.message || 'Could not send request.', kind: 'error' });
     } finally {
       setHelpBusy(null);
+    }
+  };
+
+  const handleRequestCancellation = async () => {
+    if (!activeOrder?.id || isSubmittingCancel) return;
+    const reasonToUse = cancelReason === 'Other reason' ? (customCancelReason.trim() || 'Customer requested cancellation') : cancelReason;
+    setIsSubmittingCancel(true);
+    try {
+      await submitOrderCancellationRequest({
+        orderId: activeOrder.id,
+        orderNumber: activeOrder.order_number || '---',
+        tableLabel: activeOrder.table_label || 'T01',
+        reason: reasonToUse,
+        customerName: customerName || activeOrder.customer_name || 'Guest'
+      });
+      setCancellationRequested(true);
+      setCancellationRejected(false);
+      setShowCancelModal(false);
+      if (setNotice) setNotice({ text: 'Cancellation request sent to Kitchen & Billing Counter for review.', kind: 'success' });
+    } catch (err: any) {
+      if (setNotice) setNotice({ text: err.message || 'Could not send cancellation request.', kind: 'error' });
+    } finally {
+      setIsSubmittingCancel(false);
     }
   };
 
@@ -816,8 +874,86 @@ export function CustomerDashboardPage({
                     >
                       <Receipt size={14} color="#ea580c" /> Request Bill
                     </button>
+                    {!['served', 'completed', 'cancelled'].includes(String(activeOrder.status).toLowerCase()) && !cancellationRequested && (
+                      <button
+                        type="button"
+                        className="tracker-service-btn"
+                        style={{ borderColor: '#fca5a5', color: '#dc2626', background: '#fff5f5' }}
+                        onClick={() => setShowCancelModal(true)}
+                      >
+                        <XCircle size={14} color="#dc2626" /> Cancel Order
+                      </button>
+                    )}
                   </div>
                 </div>
+
+                {/* Cancellation Status Banners */}
+                {activeOrder.status === 'cancelled' && (
+                  <div style={{
+                    background: '#fef2f2',
+                    border: '1.5px solid #fecaca',
+                    borderRadius: 16,
+                    padding: '16px 20px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 14
+                  }}>
+                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#fee2e2', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <XCircle size={22} />
+                    </div>
+                    <div>
+                      <b style={{ color: '#991b1b', fontSize: 15, display: 'block' }}>Order Cancelled</b>
+                      <span style={{ color: '#b91c1c', fontSize: 13, display: 'block', marginTop: 2 }}>
+                        This order has been officially cancelled with Kitchen &amp; Billing Counter approval.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {cancellationRequested && (
+                  <div style={{
+                    background: '#fff7ed',
+                    border: '1.5px solid #fed7aa',
+                    borderRadius: 14,
+                    padding: '14px 18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#ffedd5', color: '#ea580c', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Clock size={18} />
+                      </div>
+                      <div>
+                        <b style={{ color: '#9a3412', fontSize: 13, display: 'block' }}>Cancellation Request Sent (Pending Approval)</b>
+                        <span style={{ color: '#c2410c', fontSize: 12 }}>
+                          Waiting for Kitchen / Billing Counter staff to review and approve your cancellation request.
+                        </span>
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 11, background: '#ea580c', color: '#ffffff', padding: '4px 8px', borderRadius: 6, fontWeight: 800, whiteSpace: 'nowrap' }}>
+                      PENDING
+                    </span>
+                  </div>
+                )}
+
+                {cancellationRejected && activeOrder.status !== 'cancelled' && (
+                  <div style={{
+                    background: '#fff1f2',
+                    border: '1.5px solid #fecdd3',
+                    borderRadius: 12,
+                    padding: '12px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    color: '#be123c',
+                    fontSize: 13
+                  }}>
+                    <AlertTriangle size={18} style={{ flexShrink: 0 }} />
+                    <span>Cancellation request was declined because cooking is finished or food is being served.</span>
+                  </div>
+                )}
 
                 {/* 2. Itemized Food Details & Bill Calculation */}
                 <div className="customer-tracker-grid" style={{ display: 'grid', gap: '22px' }}>
@@ -1970,6 +2106,142 @@ Thank you for dining at Servora!
           </div>
         );
       })()}
+
+      {/* Cancellation Request Modal */}
+      {showCancelModal && (
+        <div
+          className="cancel-modal-backdrop"
+          onClick={e => {
+            if (e.target === e.currentTarget) setShowCancelModal(false);
+          }}
+        >
+          <div className="cancel-modal-card">
+            {/* Dedicated Top Right Close Button */}
+            <button
+              type="button"
+              className="cancel-modal-close-btn"
+              onClick={() => setShowCancelModal(false)}
+              title="Close modal"
+              aria-label="Close"
+            >
+              <X size={18} />
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+              <div style={{ width: 44, height: 44, borderRadius: 12, background: '#fee2e2', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <XCircle size={24} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#3b1e10' }}>Request Order Cancellation</h3>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: '#8a6452' }}>
+                  Order #{activeOrder?.order_number || activeOrder?.id || '---'} • Table {activeOrder?.table_label || '---'}
+                </p>
+              </div>
+            </div>
+
+            <div style={{ background: '#fffaf5', border: '1px solid #fed7aa', borderRadius: 12, padding: 12, marginBottom: 16, fontSize: 12.5, color: '#9a3412', lineHeight: 1.5 }}>
+              ⚠️ <b>Approval Required:</b><br />
+              Because dishes may already be queued or cooking in the kitchen, your cancellation request will be sent to the <b>Kitchen &amp; Billing Counter</b> for review and approval.
+            </div>
+
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#422116', marginBottom: 10 }}>
+              Select a reason for cancellation:
+            </label>
+            <div className="cancel-reason-list">
+              {[
+                'Ordered by mistake / wrong dish',
+                'Want to modify order items',
+                'Preparation taking too long',
+                'Need to leave urgently',
+                'Other reason'
+              ].map(r => (
+                <label
+                  key={r}
+                  className={`cancel-reason-option ${cancelReason === r ? 'selected' : ''}`}
+                  onClick={() => setCancelReason(r)}
+                >
+                  <input
+                    type="radio"
+                    name="cancelReasonCust"
+                    className="cancel-radio-input"
+                    checked={cancelReason === r}
+                    onChange={() => setCancelReason(r)}
+                  />
+                  <span className="cancel-reason-text">{r}</span>
+                </label>
+              ))}
+            </div>
+
+            {cancelReason === 'Other reason' && (
+              <div style={{ marginBottom: 18 }}>
+                <input
+                  type="text"
+                  placeholder="Please type your reason here..."
+                  value={customCancelReason}
+                  onChange={e => setCustomCancelReason(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '11px 14px',
+                    borderRadius: 10,
+                    border: '1.5px solid #ebdcd0',
+                    fontSize: 13.5,
+                    boxSizing: 'border-box',
+                    outline: 'none',
+                    color: '#3b1e10'
+                  }}
+                  autoFocus
+                />
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+              <button
+                type="button"
+                disabled={isSubmittingCancel}
+                onClick={() => setShowCancelModal(false)}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: 12,
+                  border: '1.5px solid #ebdcd0',
+                  background: '#ffffff',
+                  color: '#422116',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  fontSize: 14,
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                Keep Order
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingCancel}
+                onClick={handleRequestCancellation}
+                style={{
+                  flex: 1.25,
+                  padding: '12px',
+                  borderRadius: 12,
+                  border: 'none',
+                  background: '#dc2626',
+                  color: '#ffffff',
+                  fontWeight: 800,
+                  cursor: isSubmittingCancel ? 'not-allowed' : 'pointer',
+                  fontSize: 14,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  boxShadow: '0 4px 12px rgba(220, 38, 38, 0.35)',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                {isSubmittingCancel ? 'Sending...' : 'Send Cancel Request'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

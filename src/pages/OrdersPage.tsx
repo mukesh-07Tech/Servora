@@ -20,9 +20,10 @@ import {
   User,
   Users,
   Utensils,
-  X
+  X,
+  AlertTriangle
 } from 'lucide-react';
-import { DEFAULT_MENU, getCached, getMenu, getOrders, updateOrderStatus } from '../lib/data';
+import { DEFAULT_MENU, getCached, getMenu, getOrders, updateOrderStatus, getPendingCancellationRequests, approveOrderCancellation, rejectOrderCancellation, CancellationRequestInfo } from '../lib/data';
 import { money, supabase } from '../lib/supabase';
 
 // High-resolution authentic food imagery map for South Indian cuisine
@@ -70,16 +71,18 @@ export function OrdersPage({ setNotice, globalSearch }: { setNotice?: (n: any) =
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(8);
   const [updating, setUpdating] = useState(false);
+  const [cancelRequests, setCancelRequests] = useState<CancellationRequestInfo[]>([]);
 
   // Fetch orders and menu items from database
   const loadData = async (force = false) => {
     try {
-      const [o, m] = await Promise.all([getOrders({}, force), getMenu(true, force)]);
+      const [o, m, cReqs] = await Promise.all([getOrders({}, force), getMenu(true, force), getPendingCancellationRequests()]);
       if (o !== null && o !== undefined) {
         setOrders(o);
         setSelectedOrder((prev: any) => (prev && o.find((it: any) => it.id === prev.id)) ? prev : (o[0] || null));
       }
       if (m !== null && m !== undefined) setMenuItems(m);
+      if (cReqs) setCancelRequests(cReqs);
     } catch (e) {
       console.error('Error loading orders:', e);
     } finally {
@@ -98,6 +101,9 @@ export function OrdersPage({ setNotice, globalSearch }: { setNotice?: (n: any) =
           loadData(true);
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, () => {
+          loadData(true);
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'service_requests' }, () => {
           loadData(true);
         })
         .subscribe();
@@ -678,6 +684,86 @@ Total: ₹${Number(activeOrder.total || 0).toFixed(2)}
                   </select>
                 </div>
               </div>
+
+              {/* Customer Cancellation Request Alert in Drawer */}
+              {(() => {
+                const cr = cancelRequests.find(c => c.orderId === activeOrder.id || String(c.orderNumber) === String(activeOrder.order_number));
+                if (!cr) return null;
+                return (
+                  <div style={{
+                    background: '#fff1f2',
+                    border: '1.5px solid #fecdd3',
+                    borderRadius: 12,
+                    padding: '12px 14px',
+                    margin: '12px 0',
+                    color: '#991b1b'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, fontSize: 13 }}>
+                      <AlertTriangle size={16} color="#dc2626" />
+                      <span>Customer Requested Cancellation</span>
+                    </div>
+                    <p style={{ margin: '4px 0 10px', fontSize: 12, color: '#be123c' }}>
+                      Reason: "{cr.reason}"
+                    </p>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        type="button"
+                        style={{
+                          flex: 1,
+                          padding: '8px 12px',
+                          background: '#dc2626',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: 8,
+                          fontWeight: 800,
+                          fontSize: 12,
+                          cursor: 'pointer'
+                        }}
+                        disabled={updating}
+                        onClick={async () => {
+                          setUpdating(true);
+                          try {
+                            await approveOrderCancellation(activeOrder.id, cr.id, activeOrder.table_label);
+                            if (setNotice) setNotice({ text: `Order #${activeOrder.order_number} cancelled upon customer request.`, kind: 'success' });
+                            await loadData(true);
+                          } catch (err: any) {
+                            if (setNotice) setNotice({ text: err.message || 'Could not approve cancellation.', kind: 'error' });
+                          } finally {
+                            setUpdating(false);
+                          }
+                        }}
+                      >
+                        ✓ Approve Cancellation
+                      </button>
+                      <button
+                        type="button"
+                        style={{
+                          padding: '8px 12px',
+                          background: '#ffffff',
+                          color: '#4b5563',
+                          border: '1px solid #d1d5db',
+                          borderRadius: 8,
+                          fontWeight: 700,
+                          fontSize: 12,
+                          cursor: 'pointer'
+                        }}
+                        disabled={updating}
+                        onClick={async () => {
+                          try {
+                            await rejectOrderCancellation(cr.id, 'Declined by orders counter');
+                            if (setNotice) setNotice({ text: `Cancellation request declined for Order #${activeOrder.order_number}.`, kind: 'info' });
+                            await loadData(true);
+                          } catch (err: any) {
+                            if (setNotice) setNotice({ text: err.message || 'Could not decline request.', kind: 'error' });
+                          }
+                        }}
+                      >
+                        ✕ Decline
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Big Primary Status Action Button */}
               <div className="drawer-primary-action-wrap">

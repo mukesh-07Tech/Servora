@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
+  AlertTriangle,
   Bell,
   Check,
   CheckCircle2,
@@ -26,7 +27,7 @@ import {
   Utensils,
   X
 } from 'lucide-react';
-import { getCached, getOrders, getStaffList, updateOrderStatus } from '../lib/data';
+import { getCached, getOrders, getStaffList, updateOrderStatus, getPendingCancellationRequests, approveOrderCancellation, rejectOrderCancellation, CancellationRequestInfo } from '../lib/data';
 import { supabase } from '../lib/supabase';
 
 export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }) {
@@ -34,6 +35,7 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
   const [orders, setOrders] = useState<any[]>(() => getCached<any[]>('orders_all') || []);
   const [staff, setStaff] = useState<any[]>(() => getCached<any[]>('staff') || []);
   const [attendance, setAttendance] = useState<any[]>(() => getCached<any[]>('attendance') || []);
+  const [cancelRequests, setCancelRequests] = useState<CancellationRequestInfo[]>([]);
   const [selectedStation, setSelectedStation] = useState('all');
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -45,14 +47,16 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
 
   const loadData = useCallback(async (force = false) => {
     try {
-      const [o, s, attRes] = await Promise.all([
+      const [o, s, attRes, cReqs] = await Promise.all([
         getOrders({ activeOnly: false }, force),
         getStaffList(force),
-        supabase ? supabase.from('attendance_records').select('*') : Promise.resolve({ data: [] })
+        supabase ? supabase.from('attendance_records').select('*') : Promise.resolve({ data: [] }),
+        getPendingCancellationRequests()
       ]);
       if (o !== null && o !== undefined) setOrders(o);
       if (s !== null && s !== undefined) setStaff(s);
       if ((attRes as any)?.data) setAttendance((attRes as any).data);
+      if (cReqs) setCancelRequests(cReqs);
     } catch (e) {
       console.error('Error fetching kitchen orders:', e);
     } finally {
@@ -75,12 +79,33 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_records' }, () => { loadData(true); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'service_requests' }, () => { loadData(true); })
       .subscribe();
 
     return () => {
       if (supabase) supabase.removeChannel(channel);
     };
   }, [loadData]);
+
+  const handleApproveCancel = async (orderId: string, serviceReqId: string, tableLabel: string, orderNumber: any) => {
+    try {
+      await approveOrderCancellation(orderId, serviceReqId, tableLabel);
+      if (setNotice) setNotice({ text: `Order #${orderNumber} cancellation APPROVED by kitchen. Order is cancelled.`, kind: 'success' });
+      await loadData(true);
+    } catch (e: any) {
+      if (setNotice) setNotice({ text: e.message || 'Could not approve cancellation.', kind: 'error' });
+    }
+  };
+
+  const handleRejectCancel = async (serviceReqId: string, orderNumber: any) => {
+    try {
+      await rejectOrderCancellation(serviceReqId, 'Food preparation already in progress');
+      if (setNotice) setNotice({ text: `Cancellation request for Order #${orderNumber} declined. Kitchen is cooking.`, kind: 'info' });
+      await loadData(true);
+    } catch (e: any) {
+      if (setNotice) setNotice({ text: e.message || 'Could not decline request.', kind: 'error' });
+    }
+  };
 
   // Handle stage transitions
   const handleTransition = async (orderId: string, nextStatus: string, orderNum: number) => {
@@ -413,6 +438,65 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
       {/* 2. TAB VIEW: LIVE KITCHEN */}
       {activeTab === 'live' && (
         <>
+          {/* Urgent Cancellation Requests Alert Bar */}
+          {cancelRequests.length > 0 && (
+            <div style={{
+              background: 'linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%)',
+              color: '#ffffff',
+              padding: '14px 20px',
+              borderRadius: 14,
+              marginBottom: 16,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 14,
+              boxShadow: '0 6px 20px rgba(185, 28, 28, 0.35)',
+              border: '1.5px solid #f87171'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(255, 255, 255, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <AlertTriangle size={22} style={{ color: '#fef08a' }} />
+                </div>
+                <div>
+                  <b style={{ fontSize: 15, display: 'block', color: '#ffffff' }}>
+                    ⚠️ Customer Cancellation Request ({cancelRequests.length})
+                  </b>
+                  <span style={{ fontSize: 13, color: '#fecaca' }}>
+                    Customer requested cancellation in Dine-In Menu. Kitchen / Billing approval required.
+                  </span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {cancelRequests.map(cr => {
+                  const matchingOrd = orders.find(o => o.id === cr.orderId || String(o.order_number) === String(cr.orderNumber));
+                  const targetOrdId = matchingOrd?.id || cr.orderId;
+                  return (
+                    <div key={cr.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(0, 0, 0, 0.35)', padding: '6px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.15)' }}>
+                      <span style={{ fontSize: 12, fontWeight: 700 }}>
+                        Table {cr.tableLabel} • #SVR{cr.orderNumber} ({cr.reason})
+                      </span>
+                      <button
+                        type="button"
+                        style={{ background: '#16a34a', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: 6, fontWeight: 800, fontSize: 12, cursor: 'pointer' }}
+                        onClick={() => handleApproveCancel(targetOrdId, cr.id, cr.tableLabel, cr.orderNumber)}
+                      >
+                        ✓ Approve Cancel
+                      </button>
+                      <button
+                        type="button"
+                        style={{ background: 'rgba(255,255,255,0.2)', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: 6, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}
+                        onClick={() => handleRejectCancel(cr.id, cr.orderNumber)}
+                      >
+                        ✕ Decline
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Station Filter Pills + Auto Refresh Bar */}
           <div className="kds-admin-filter-bar">
             <div className="station-pills-group">
@@ -466,8 +550,10 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
                   {newOrders.length === 0 ? (
                     <div className="kds-empty-col-notice">No new orders waiting.</div>
                   ) : (
-                    newOrders.map(order => (
-                      <div key={order.id} className="kds-ticket-card card-new">
+                    newOrders.map(order => {
+                      const cr = cancelRequests.find(c => c.orderId === order.id || String(c.orderNumber) === String(order.order_number));
+                      return (
+                      <div key={order.id} className={`kds-ticket-card card-new ${cr ? 'has-cancel-request' : ''}`}>
                         <div className="ticket-top-row">
                           <div className="ticket-id-group">
                             <b className="ticket-id">#SVR{order.order_number}</b>
@@ -485,6 +571,32 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
                           <User size={13} style={{ color: '#ea580c', flexShrink: 0 }} />
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.customer_name || 'Guest'}</span>
                         </div>
+
+                        {cr && (
+                          <div style={{ background: '#fee2e2', border: '1.5px solid #ef4444', borderRadius: 10, padding: '8px 10px', margin: '6px 0 8px', color: '#991b1b', fontSize: 12 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800 }}>
+                              <AlertTriangle size={14} style={{ color: '#dc2626' }} />
+                              <span>Cancel Requested by Customer</span>
+                            </div>
+                            <div style={{ marginTop: 2, fontSize: 11, color: '#7f1d1d' }}>"{cr.reason}"</div>
+                            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                              <button
+                                type="button"
+                                style={{ flex: 1, padding: '6px 8px', borderRadius: 6, background: '#dc2626', color: '#fff', border: 'none', fontWeight: 800, fontSize: 11, cursor: 'pointer' }}
+                                onClick={() => handleApproveCancel(order.id, cr.id, order.table_label, order.order_number)}
+                              >
+                                ✓ Approve Cancel
+                              </button>
+                              <button
+                                type="button"
+                                style={{ padding: '6px 8px', borderRadius: 6, background: '#ffffff', color: '#4b5563', border: '1px solid #d1d5db', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
+                                onClick={() => handleRejectCancel(cr.id, order.order_number)}
+                              >
+                                ✕ Decline
+                              </button>
+                            </div>
+                          </div>
+                        )}
 
                         <div className="ticket-items-list">
                           {(order.order_items || []).map((it: any, i: number) => (
@@ -509,8 +621,8 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
                           </button>
                         </div>
                       </div>
-                    ))
-                  )}
+                    );
+                  }))}
                 </div>
               </div>
 
@@ -527,8 +639,10 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
                   {prepOrders.length === 0 ? (
                     <div className="kds-empty-col-notice">No orders currently preparing.</div>
                   ) : (
-                    prepOrders.map(order => (
-                      <div key={order.id} className="kds-ticket-card card-prep">
+                    prepOrders.map(order => {
+                      const cr = cancelRequests.find(c => c.orderId === order.id || String(c.orderNumber) === String(order.order_number));
+                      return (
+                      <div key={order.id} className={`kds-ticket-card card-prep ${cr ? 'has-cancel-request' : ''}`}>
                         <div className="ticket-top-row">
                           <div className="ticket-id-group">
                             <b className="ticket-id">#SVR{order.order_number}</b>
@@ -546,6 +660,32 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
                           <User size={13} style={{ color: '#ea580c', flexShrink: 0 }} />
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.customer_name || 'Guest'}</span>
                         </div>
+
+                        {cr && (
+                          <div style={{ background: '#fee2e2', border: '1.5px solid #ef4444', borderRadius: 10, padding: '8px 10px', margin: '6px 0 8px', color: '#991b1b', fontSize: 12 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800 }}>
+                              <AlertTriangle size={14} style={{ color: '#dc2626' }} />
+                              <span>Cancel Requested by Customer</span>
+                            </div>
+                            <div style={{ marginTop: 2, fontSize: 11, color: '#7f1d1d' }}>"{cr.reason}"</div>
+                            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                              <button
+                                type="button"
+                                style={{ flex: 1, padding: '6px 8px', borderRadius: 6, background: '#dc2626', color: '#fff', border: 'none', fontWeight: 800, fontSize: 11, cursor: 'pointer' }}
+                                onClick={() => handleApproveCancel(order.id, cr.id, order.table_label, order.order_number)}
+                              >
+                                ✓ Approve Cancel
+                              </button>
+                              <button
+                                type="button"
+                                style={{ padding: '6px 8px', borderRadius: 6, background: '#ffffff', color: '#4b5563', border: '1px solid #d1d5db', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
+                                onClick={() => handleRejectCancel(cr.id, order.order_number)}
+                              >
+                                ✕ Decline
+                              </button>
+                            </div>
+                          </div>
+                        )}
 
                         <div className="ticket-items-list">
                           {(order.order_items || []).map((it: any, i: number) => (
@@ -570,8 +710,8 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
                           </button>
                         </div>
                       </div>
-                    ))
-                  )}
+                    );
+                  }))}
                 </div>
               </div>
 
@@ -588,8 +728,10 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
                   {readyOrders.length === 0 ? (
                     <div className="kds-empty-col-notice">No orders ready for serving.</div>
                   ) : (
-                    readyOrders.map(order => (
-                      <div key={order.id} className="kds-ticket-card card-ready">
+                    readyOrders.map(order => {
+                      const cr = cancelRequests.find(c => c.orderId === order.id || String(c.orderNumber) === String(order.order_number));
+                      return (
+                      <div key={order.id} className={`kds-ticket-card card-ready ${cr ? 'has-cancel-request' : ''}`}>
                         <div className="ticket-top-row">
                           <div className="ticket-id-group">
                             <b className="ticket-id">#SVR{order.order_number}</b>
@@ -607,6 +749,32 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
                           <User size={13} style={{ color: '#ea580c', flexShrink: 0 }} />
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.customer_name || 'Guest'}</span>
                         </div>
+
+                        {cr && (
+                          <div style={{ background: '#fee2e2', border: '1.5px solid #ef4444', borderRadius: 10, padding: '8px 10px', margin: '6px 0 8px', color: '#991b1b', fontSize: 12 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800 }}>
+                              <AlertTriangle size={14} style={{ color: '#dc2626' }} />
+                              <span>Cancel Requested by Customer</span>
+                            </div>
+                            <div style={{ marginTop: 2, fontSize: 11, color: '#7f1d1d' }}>"{cr.reason}"</div>
+                            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                              <button
+                                type="button"
+                                style={{ flex: 1, padding: '6px 8px', borderRadius: 6, background: '#dc2626', color: '#fff', border: 'none', fontWeight: 800, fontSize: 11, cursor: 'pointer' }}
+                                onClick={() => handleApproveCancel(order.id, cr.id, order.table_label, order.order_number)}
+                              >
+                                ✓ Approve Cancel
+                              </button>
+                              <button
+                                type="button"
+                                style={{ padding: '6px 8px', borderRadius: 6, background: '#ffffff', color: '#4b5563', border: '1px solid #d1d5db', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
+                                onClick={() => handleRejectCancel(cr.id, order.order_number)}
+                              >
+                                ✕ Decline
+                              </button>
+                            </div>
+                          </div>
+                        )}
 
                         <div className="ticket-items-list">
                           {(order.order_items || []).map((it: any, i: number) => (
@@ -631,8 +799,8 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
                           </button>
                         </div>
                       </div>
-                    ))
-                  )}
+                    );
+                  }))}
                 </div>
               </div>
             </div>

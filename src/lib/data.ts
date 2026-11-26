@@ -671,3 +671,154 @@ export async function saveManualAttendance({
     return data;
   }
 }
+
+// ==========================================
+// 5. Order Cancellation Request & Approval System
+// ==========================================
+
+export interface CancellationRequestInfo {
+  id: string;
+  orderId: string;
+  orderNumber: string | number;
+  tableLabel: string;
+  customerName: string;
+  reason: string;
+  status: string;
+  createdAt: string;
+}
+
+export function parseCancellationNote(note: string): { orderNumber: string; orderId: string; customerName: string; reason: string } {
+  const clean = note || '';
+  const orderNumMatch = clean.match(/Order\s*#?([A-Za-z0-9_-]+)/i);
+  const orderIdMatch = clean.match(/\(([a-f0-9-]+)\)/i);
+  const guestMatch = clean.match(/Guest:\s*([^|]+)/i);
+  const reasonMatch = clean.match(/Reason:\s*(.+)$/i);
+  return {
+    orderNumber: orderNumMatch ? orderNumMatch[1].replace(/^SVR/i, '') : '',
+    orderId: orderIdMatch ? orderIdMatch[1] : '',
+    customerName: guestMatch ? guestMatch[1].trim() : '',
+    reason: reasonMatch ? reasonMatch[1].trim() : 'Customer requested order cancellation'
+  };
+}
+
+export async function submitOrderCancellationRequest(params: {
+  orderId: string;
+  orderNumber: string | number;
+  tableLabel: string;
+  reason: string;
+  customerName?: string;
+}) {
+  if (!supabase) throw new Error('Supabase client is not initialized.');
+  const { data: rest } = await supabase.from('restaurants').select('id').limit(1).maybeSingle();
+  const restaurantId = rest?.id || 'a0000000-0000-0000-0000-000000000001';
+
+  const note = `[CANCEL_REQUEST] Order #SVR${params.orderNumber} (${params.orderId}) | Guest: ${params.customerName || 'Guest'} | Reason: ${params.reason || 'Customer requested order cancellation'}`;
+
+  const { data, error } = await supabase.from('service_requests').insert({
+    restaurant_id: restaurantId,
+    table_label: params.tableLabel || 'T01',
+    request_type: 'other',
+    status: 'new',
+    note
+  }).select().single();
+
+  if (error) throw error;
+  invalidateCache('service_requests');
+  return data;
+}
+
+export async function getPendingCancellationRequests(): Promise<CancellationRequestInfo[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('service_requests')
+    .select('*')
+    .eq('request_type', 'other')
+    .ilike('note', '%[CANCEL_REQUEST]%')
+    .eq('status', 'new')
+    .order('created_at', { ascending: false });
+
+  if (error || !data) return [];
+  return data.map((r: any) => {
+    const parsed = parseCancellationNote(r.note);
+    return {
+      id: r.id,
+      orderId: parsed.orderId,
+      orderNumber: parsed.orderNumber,
+      tableLabel: r.table_label || '—',
+      customerName: parsed.customerName || 'Guest',
+      reason: parsed.reason,
+      status: r.status,
+      createdAt: r.created_at
+    };
+  });
+}
+
+export async function approveOrderCancellation(orderId: string, serviceRequestId?: string, tableLabel?: string) {
+  if (!supabase) throw new Error('Supabase client is not initialized.');
+
+  // 1. Mark order as cancelled
+  const { error: ordErr } = await supabase
+    .from('orders')
+    .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+    .eq('id', orderId);
+  if (ordErr) throw ordErr;
+
+  // 2. Mark order_items as cancelled
+  try {
+    await supabase.from('order_items').update({ status: 'cancelled' }).eq('order_id', orderId);
+  } catch (e) {
+    console.warn('Could not update order_items to cancelled:', e);
+  }
+
+  // 3. Mark service_requests as completed (approved)
+  if (serviceRequestId) {
+    try {
+      await supabase
+        .from('service_requests')
+        .update({ status: 'completed', updated_at: new Date().toISOString() })
+        .eq('id', serviceRequestId);
+    } catch { }
+  } else {
+    try {
+      await supabase
+        .from('service_requests')
+        .update({ status: 'completed', updated_at: new Date().toISOString() })
+        .ilike('note', `%${orderId}%`)
+        .eq('status', 'new');
+    } catch { }
+  }
+
+  // 4. If tableLabel provided, check if table can be released if no other active orders
+  if (tableLabel) {
+    try {
+      const { data: remaining } = await supabase
+        .from('orders')
+        .select('id')
+        .eq('table_label', tableLabel)
+        .not('status', 'in', '(completed,cancelled)');
+      if (!remaining || remaining.length === 0) {
+        await supabase.from('dining_tables').update({ status: 'available' }).eq('table_number', tableLabel);
+      }
+    } catch { }
+  }
+
+  invalidateCache('orders');
+  invalidateCache('orders_all');
+  invalidateCache('orders_active');
+  invalidateCache('dining_tables');
+}
+
+export async function rejectOrderCancellation(serviceRequestId: string, reason?: string) {
+  if (!supabase) throw new Error('Supabase client is not initialized.');
+  const { error } = await supabase
+    .from('service_requests')
+    .update({
+      status: 'cancelled',
+      note: `[CANCEL_REJECTED] ${reason || 'Preparation already finished or food served'}`,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', serviceRequestId);
+  if (error) throw error;
+  invalidateCache('service_requests');
+}
+

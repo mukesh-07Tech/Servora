@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   AlertCircle,
+  AlertTriangle,
   Banknote,
   Check,
   CheckCircle2,
@@ -17,7 +18,7 @@ import {
   Utensils,
   X
 } from 'lucide-react';
-import { DEFAULT_TABLES, getCached, getOrders, getTables } from '../lib/data';
+import { DEFAULT_TABLES, getCached, getOrders, getTables, getPendingCancellationRequests, approveOrderCancellation, rejectOrderCancellation, CancellationRequestInfo } from '../lib/data';
 import { money, supabase } from '../lib/supabase';
 
 export function WaiterBillsPage({
@@ -30,6 +31,7 @@ export function WaiterBillsPage({
   const [tables, setTables] = useState<any[]>(() => getCached<any[]>('tables') || DEFAULT_TABLES);
   const [orders, setOrders] = useState<any[]>(() => getCached<any[]>('orders_all') || []);
   const [settledBills, setSettledBills] = useState<any[]>([]);
+  const [cancelRequests, setCancelRequests] = useState<CancellationRequestInfo[]>([]);
   const [selectedTableNum, setSelectedTableNum] = useState<string>('T01');
   const [paymentMode, setPaymentMode] = useState<'cash' | 'upi' | 'razorpay'>('cash');
   const [cashTendered, setCashTendered] = useState<string>('');
@@ -42,9 +44,14 @@ export function WaiterBillsPage({
 
   const loadData = async (force = false) => {
     try {
-      const [tData, oData] = await Promise.all([getTables(force), getOrders({}, force)]);
+      const [tData, oData, cReqs] = await Promise.all([
+        getTables(force),
+        getOrders({}, force),
+        getPendingCancellationRequests()
+      ]);
       if (tData !== null && tData !== undefined) setTables(tData);
       if (oData !== null && oData !== undefined) setOrders(oData);
+      if (cReqs) setCancelRequests(cReqs);
 
       if (supabase) {
         const { data: billsData } = await supabase
@@ -63,7 +70,43 @@ export function WaiterBillsPage({
 
   useEffect(() => {
     loadData();
+    if (!supabase) return;
+    const channel = supabase
+      .channel('bills-page-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => { loadData(true); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dining_tables' }, () => { loadData(true); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'service_requests' }, () => { loadData(true); })
+      .subscribe();
+
+    return () => {
+      if (supabase) supabase.removeChannel(channel);
+    };
   }, []);
+
+  const handleApproveCancel = async (cr: CancellationRequestInfo) => {
+    setIsSubmitting(true);
+    try {
+      const matchingOrd = orders.find(o => o.id === cr.orderId || String(o.order_number) === String(cr.orderNumber));
+      const targetOrdId = matchingOrd?.id || cr.orderId;
+      await approveOrderCancellation(targetOrdId, cr.id, cr.tableLabel);
+      if (setNotice) setNotice({ text: `Order #${cr.orderNumber} cancellation APPROVED by billing counter. Order cancelled and removed from bill.`, kind: 'success' });
+      await loadData(true);
+    } catch (e: any) {
+      if (setNotice) setNotice({ text: e.message || 'Could not approve cancellation.', kind: 'error' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRejectCancel = async (cr: CancellationRequestInfo) => {
+    try {
+      await rejectOrderCancellation(cr.id, 'Declined by billing counter');
+      if (setNotice) setNotice({ text: `Cancellation request for Order #${cr.orderNumber} declined. Order remains active.`, kind: 'info' });
+      await loadData(true);
+    } catch (e: any) {
+      if (setNotice) setNotice({ text: e.message || 'Could not decline cancellation.', kind: 'error' });
+    }
+  };
 
   // Filter tables that have an active order or requested bill
   const billingTables = tables.filter(t => {
@@ -272,6 +315,11 @@ export function WaiterBillsPage({
               }}
             >
               <span>{t.table_number}</span>
+              {cancelRequests.some(cr => cr.tableLabel === t.table_number) && (
+                <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '10px', background: '#dc2626', color: '#fff', fontWeight: 800 }}>
+                  Cancel Req
+                </span>
+              )}
               {hasBillReq && (
                 <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '10px', background: '#ea580c', color: '#fff' }}>
                   Bill Req
@@ -302,6 +350,83 @@ export function WaiterBillsPage({
               {activeOrder?.status?.toUpperCase() || 'UNBILLED'}
             </span>
           </div>
+
+          {/* Cancellation Request Warning Banner for this Table */}
+          {(() => {
+            const tableCancelReqs = cancelRequests.filter(cr =>
+              cr.tableLabel === currentTable?.table_number ||
+              activeOrders.some(o => o.id === cr.orderId || String(o.order_number) === String(cr.orderNumber))
+            );
+            if (tableCancelReqs.length === 0) return null;
+            return (
+              <div style={{
+                background: '#fff1f2',
+                border: '1.5px solid #fecdd3',
+                borderRadius: '12px',
+                padding: '12px 16px',
+                marginTop: '12px',
+                marginBottom: '10px'
+              }}>
+                {tableCancelReqs.map(cr => (
+                  <div key={cr.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#fee2e2', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <AlertTriangle size={18} />
+                      </div>
+                      <div>
+                        <b style={{ color: '#991b1b', fontSize: '13px', display: 'block' }}>
+                          Customer Requested Cancellation for Order #{cr.orderNumber}
+                        </b>
+                        <span style={{ color: '#be123c', fontSize: '12px' }}>
+                          Table {cr.tableLabel} • Reason: "{cr.reason}"
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        style={{
+                          background: '#dc2626',
+                          color: '#ffffff',
+                          border: 'none',
+                          padding: '8px 14px',
+                          borderRadius: '8px',
+                          fontWeight: 800,
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          boxShadow: '0 2px 8px rgba(220, 38, 38, 0.3)'
+                        }}
+                        disabled={isSubmitting}
+                        onClick={() => handleApproveCancel(cr)}
+                      >
+                        <Check size={14} /> Approve Cancellation
+                      </button>
+                      <button
+                        type="button"
+                        style={{
+                          background: '#ffffff',
+                          color: '#4b5563',
+                          border: '1px solid #d1d5db',
+                          padding: '8px 12px',
+                          borderRadius: '8px',
+                          fontWeight: 700,
+                          fontSize: '12px',
+                          cursor: 'pointer'
+                        }}
+                        disabled={isSubmitting}
+                        onClick={() => handleRejectCancel(cr)}
+                      >
+                        ✕ Decline
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
 
           {/* Dish items table */}
           {!activeOrder ? (

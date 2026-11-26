@@ -9105,3 +9105,209 @@ body.app-route #demo {
   color: #8a6452;
   margin-top: 2px;
 }
+
+/* ============================================================== */
+/* CANCEL REQUEST MODAL & DINE-IN UI/UX ENHANCEMENTS              */
+/* ============================================================== */
+@keyframes cancelFadeIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.cancel-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(28, 16, 10, 0.75);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  padding: 16px;
+}
+
+.cancel-modal-card {
+  position: relative;
+  background: #ffffff;
+  border-radius: 24px;
+  max-width: 480px;
+  width: 100%;
+  padding: 28px 26px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35), 0 6px 20px rgba(0, 0, 0, 0.12);
+  border: 1.5px solid #fed7aa;
+  text-align: left;
+  animation: cancelFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+.cancel-modal-close-btn {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid #ebdcd0;
+  background: #fdfaf7;
+  color: #57534e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  z-index: 10;
+}
+
+.cancel-modal-close-btn:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #dc2626;
+  transform: rotate(90deg);
+}
+
+.cancel-reason-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.cancel-reason-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1.5px solid #ebdcd0;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.cancel-reason-option:hover {
+  border-color: #ea580c;
+  background: #fffaf5;
+}
+
+.cancel-reason-option.selected {
+  border-color: #ea580c;
+  background: #fff7ed;
+  box-shadow: 0 2px 10px rgba(234, 88, 12, 0.12);
+}
+
+.cancel-radio-input {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #d1d5db;
+  border-radius: 50%;
+  display: grid;
+  place-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cancel-radio-input::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transform: scale(0);
+  transition: transform 0.15s ease-in-out;
+  background-color: #ea580c;
+}
+
+.cancel-radio-input:checked {
+  border-color: #ea580c;
+}
+
+.cancel-radio-input:checked::before {
+  transform: scale(1);
+}
+
+.cancel-reason-text {
+  font-size: 13.5px;
+  color: #3b1e10;
+  font-weight: 600;
+  line-height: 1.35;
+  flex: 1;
+}
+
+.help-chip.help-chip-cancel {
+  border-color: #fca5a5;
+  background: #fff5f5;
+  color: #dc2626;
+}
+
+.help-chip.help-chip-cancel:hover:not(:disabled) {
+  border-color: #dc2626;
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* Close buttons in Dine-In UI */
+.dine-in-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid #ebdcd0;
+  color: #78350f;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.dine-in-close-btn:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #dc2626;
+  transform: scale(1.05);
+}
+
+.dine-in-close-corner-btn {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1.5px solid #ebdcd0;
+  color: #78350f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  z-index: 10;
+  text-decoration: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.dine-in-close-corner-btn:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #dc2626;
+  transform: rotate(90deg);
+}
+
+@media (max-width: 640px) {
+  .cancel-modal-card {
+    padding: 22px 18px;
+    border-radius: 20px;
+  }
+  .cancel-reason-text {
+    font-size: 13px;
+  }
+}

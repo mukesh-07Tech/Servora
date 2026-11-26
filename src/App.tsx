@@ -67,15 +67,17 @@ import {
   User,
   UserCheck,
   UserPlus,
+  AlertTriangle,
   Users,
   Utensils,
   Volume2,
   VolumeX,
   Wallet,
   X,
+  XCircle,
   Zap
 } from 'lucide-react';
-import { getMenu, getOrders, getStaffList, getStations, getTables, resolveTableToken, updateOrderStatus, updateTicketItem } from './lib/data';
+import { getMenu, getOrders, getStaffList, getStations, getTables, resolveTableToken, updateOrderStatus, updateTicketItem, submitOrderCancellationRequest, getPendingCancellationRequests, approveOrderCancellation, rejectOrderCancellation, CancellationRequestInfo } from './lib/data';
 import { AppRole, CartLine, MenuItem, StaffProfile, supabase, supabaseConfigured, money } from './lib/supabase';
 import QRCode from 'qrcode';
 import { DashboardOverview } from './pages/DashboardOverview';
@@ -2265,6 +2267,7 @@ function Kitchen({
   const [stations, setStations] = useState<any[]>([]);
   const [staff, setStaff] = useState<any[]>([]);
   const [attendance, setAttendance] = useState<any[]>([]);
+  const [cancelRequests, setCancelRequests] = useState<CancellationRequestInfo[]>([]);
   const [activeStation, setActiveStation] = useState('all');
   const [activeNav, setActiveNav] = useState<'live' | 'queue' | 'report' | 'staff' | 'stations' | 'completed' | 'history' | 'settings'>('live');
   const [searchQueue, setSearchQueue] = useState('');
@@ -2287,14 +2290,16 @@ function Kitchen({
         getOrders({ activeOnly: false }),
         getStations(),
         getStaffList(),
-        supabase ? supabase.from('attendance_records').select('*') : Promise.resolve({ data: [] })
+        supabase ? supabase.from('attendance_records').select('*') : Promise.resolve({ data: [] }),
+        getPendingCancellationRequests()
       ])
-        .then(([o, s, stf, attRes]) => {
+        .then(([o, s, stf, attRes, cReqs]) => {
           setError('');
           setRows(o);
           setStations(s);
           setStaff(stf || []);
           setAttendance((attRes as any)?.data || []);
+          setCancelRequests(cReqs || []);
           const ids = new Set<string>(o.map((x: any) => x.id));
           if (knownIds.current) {
             const fresh = [...ids].filter(id => !knownIds.current!.has(id));
@@ -2324,6 +2329,7 @@ function Kitchen({
         .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, handleDbChange)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'station_tickets' }, handleDbChange)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_records' }, handleDbChange)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'service_requests' }, handleDbChange)
         .subscribe();
     }
     return () => {
@@ -2332,6 +2338,31 @@ function Kitchen({
       if (supabase && ch) supabase.removeChannel(ch);
     };
   }, [refresh]);
+
+  async function handleApproveCancel(orderId: string, serviceReqId: string, tableLabel: string, orderNumber: any) {
+    if (busyId === orderId) return;
+    setBusyId(orderId);
+    try {
+      await approveOrderCancellation(orderId, serviceReqId, tableLabel);
+      if (sound) playChime();
+      notify(setNotice, `Order #${orderNumber} cancellation APPROVED by kitchen. Order cancelled.`, 'success');
+      await refresh();
+    } catch (err: any) {
+      notify(setNotice, err.message || 'Could not approve cancellation.', 'error');
+    } finally {
+      setBusyId('');
+    }
+  }
+
+  async function handleRejectCancel(serviceReqId: string, orderNumber: any) {
+    try {
+      await rejectOrderCancellation(serviceReqId, 'Food preparation already in progress');
+      notify(setNotice, `Cancellation request for Order #${orderNumber} declined. Food is being prepared.`, 'info');
+      await refresh();
+    } catch (err: any) {
+      notify(setNotice, err.message || 'Could not decline request.', 'error');
+    }
+  }
 
   // Fullscreen toggle
   function toggleFullscreen() {
@@ -2854,6 +2885,65 @@ function Kitchen({
             </div>
           )}
 
+          {/* Urgent Cancellation Requests Alert Bar in Kitchen */}
+          {cancelRequests.length > 0 && (
+            <div style={{
+              background: 'linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%)',
+              color: '#ffffff',
+              padding: '14px 20px',
+              borderRadius: 14,
+              marginBottom: 16,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 14,
+              boxShadow: '0 6px 20px rgba(185, 28, 28, 0.35)',
+              border: '1.5px solid #f87171'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(255, 255, 255, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <AlertTriangle size={22} style={{ color: '#fef08a' }} />
+                </div>
+                <div>
+                  <b style={{ fontSize: 15, display: 'block', color: '#ffffff' }}>
+                    ⚠️ Customer Cancellation Request ({cancelRequests.length})
+                  </b>
+                  <span style={{ fontSize: 13, color: '#fecaca' }}>
+                    Customer requested cancellation in Dine-In Menu. Kitchen / Billing approval required.
+                  </span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {cancelRequests.map(cr => {
+                  const matchingOrd = rows.find(o => o.id === cr.orderId || String(o.order_number) === String(cr.orderNumber));
+                  const targetOrdId = matchingOrd?.id || cr.orderId;
+                  return (
+                    <div key={cr.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(0, 0, 0, 0.35)', padding: '6px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.15)' }}>
+                      <span style={{ fontSize: 12, fontWeight: 700 }}>
+                        Table {cr.tableLabel} • #SVR{cr.orderNumber} ({cr.reason})
+                      </span>
+                      <button
+                        type="button"
+                        style={{ background: '#16a34a', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: 6, fontWeight: 800, fontSize: 12, cursor: 'pointer' }}
+                        onClick={() => handleApproveCancel(targetOrdId, cr.id, cr.tableLabel, cr.orderNumber)}
+                      >
+                        ✓ Approve Cancel
+                      </button>
+                      <button
+                        type="button"
+                        style={{ background: 'rgba(255,255,255,0.2)', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: 6, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}
+                        onClick={() => handleRejectCancel(cr.id, cr.orderNumber)}
+                      >
+                        ✕ Decline
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {activeNav === 'live' ? (
             /* 3 Columns Kanban Board + Right Sidebar Panel */
             <div className="kds-columns-layout">
@@ -2864,8 +2954,10 @@ function Kitchen({
                   <span>New Orders ({newOrders.length})</span>
                 </div>
                 <div className="kds-col-cards-list">
-                  {newOrders.map(order => (
-                    <article className="kds-order-card new-order-card" key={order.id}>
+                  {newOrders.map(order => {
+                    const cr = cancelRequests.find(c => c.orderId === order.id || String(c.orderNumber) === String(order.order_number));
+                    return (
+                    <article className={`kds-order-card new-order-card ${cr ? 'has-cancel-request' : ''}`} key={order.id}>
                       <div className="kds-card-top-row">
                         <span className="kds-card-order-id">#SVR{order.order_number}</span>
                         <span className="kds-card-table-badge">
@@ -2882,6 +2974,31 @@ function Kitchen({
                         <User size={13} style={{ color: '#ea580c', flexShrink: 0 }} />
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.customer_name || 'Guest'}</span>
                       </div>
+                      {cr && (
+                        <div style={{ background: '#fee2e2', border: '1.5px solid #ef4444', borderRadius: 10, padding: '8px 10px', margin: '6px 0 8px', color: '#991b1b', fontSize: 12 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800 }}>
+                            <AlertTriangle size={14} style={{ color: '#dc2626' }} />
+                            <span>Cancel Requested by Customer</span>
+                          </div>
+                          <div style={{ marginTop: 2, fontSize: 11, color: '#7f1d1d' }}>"{cr.reason}"</div>
+                          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                            <button
+                              type="button"
+                              style={{ flex: 1, padding: '6px 8px', borderRadius: 6, background: '#dc2626', color: '#fff', border: 'none', fontWeight: 800, fontSize: 11, cursor: 'pointer' }}
+                              onClick={() => handleApproveCancel(order.id, cr.id, order.table_label, order.order_number)}
+                            >
+                              ✓ Approve Cancel
+                            </button>
+                            <button
+                              type="button"
+                              style={{ padding: '6px 8px', borderRadius: 6, background: '#ffffff', color: '#4b5563', border: '1px solid #d1d5db', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
+                              onClick={() => handleRejectCancel(cr.id, order.order_number)}
+                            >
+                              ✕ Decline
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       <div className="kds-card-items-box">
                         {order.items.map((it: any) => (
                           <div className="kds-card-item-row" key={it.id}>
@@ -2899,7 +3016,7 @@ function Kitchen({
                         <Check size={16} /> Accept Order
                       </button>
                     </article>
-                  ))}
+                  );})}
                   {newOrders.length === 0 && (
                     <div style={{ textAlign: 'center', padding: '40px 16px', color: '#a07d6a', fontSize: 13 }}>
                       <CheckCircle2 size={32} style={{ margin: '0 auto 8px', color: '#16a34a' }} />
@@ -2917,8 +3034,10 @@ function Kitchen({
                   <span>In Preparation ({prepOrders.length})</span>
                 </div>
                 <div className="kds-col-cards-list">
-                  {prepOrders.map(order => (
-                    <article className="kds-order-card in-prep-card" key={order.id}>
+                  {prepOrders.map(order => {
+                    const cr = cancelRequests.find(c => c.orderId === order.id || String(c.orderNumber) === String(order.order_number));
+                    return (
+                    <article className={`kds-order-card in-prep-card ${cr ? 'has-cancel-request' : ''}`} key={order.id}>
                       <div className="kds-card-top-row">
                         <span className="kds-card-order-id">#SVR{order.order_number}</span>
                         <span className="kds-card-table-badge">
@@ -2935,6 +3054,31 @@ function Kitchen({
                         <User size={13} style={{ color: '#ea580c', flexShrink: 0 }} />
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.customer_name || 'Guest'}</span>
                       </div>
+                      {cr && (
+                        <div style={{ background: '#fee2e2', border: '1.5px solid #ef4444', borderRadius: 10, padding: '8px 10px', margin: '6px 0 8px', color: '#991b1b', fontSize: 12 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800 }}>
+                            <AlertTriangle size={14} style={{ color: '#dc2626' }} />
+                            <span>Cancel Requested by Customer</span>
+                          </div>
+                          <div style={{ marginTop: 2, fontSize: 11, color: '#7f1d1d' }}>"{cr.reason}"</div>
+                          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                            <button
+                              type="button"
+                              style={{ flex: 1, padding: '6px 8px', borderRadius: 6, background: '#dc2626', color: '#fff', border: 'none', fontWeight: 800, fontSize: 11, cursor: 'pointer' }}
+                              onClick={() => handleApproveCancel(order.id, cr.id, order.table_label, order.order_number)}
+                            >
+                              ✓ Approve Cancel
+                            </button>
+                            <button
+                              type="button"
+                              style={{ padding: '6px 8px', borderRadius: 6, background: '#ffffff', color: '#4b5563', border: '1px solid #d1d5db', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
+                              onClick={() => handleRejectCancel(cr.id, order.order_number)}
+                            >
+                              ✕ Decline
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       <div className="kds-card-items-box">
                         {order.items.map((it: any) => (
                           <div className="kds-card-item-row" key={it.id}>
@@ -2966,7 +3110,7 @@ function Kitchen({
                         </button>
                       </div>
                     </article>
-                  ))}
+                  );})}
                   {prepOrders.length === 0 && (
                     <div style={{ textAlign: 'center', padding: '40px 16px', color: '#a07d6a', fontSize: 13 }}>
                       <ChefHat size={32} style={{ margin: '0 auto 8px', color: '#ea580c' }} />
@@ -2984,8 +3128,10 @@ function Kitchen({
                   <span>Ready for Service ({readyOrders.length})</span>
                 </div>
                 <div className="kds-col-cards-list">
-                  {readyOrders.map(order => (
-                    <article className="kds-order-card ready-card" key={order.id}>
+                  {readyOrders.map(order => {
+                    const cr = cancelRequests.find(c => c.orderId === order.id || String(c.orderNumber) === String(order.order_number));
+                    return (
+                    <article className={`kds-order-card ready-card ${cr ? 'has-cancel-request' : ''}`} key={order.id}>
                       <div className="kds-card-top-row">
                         <span className="kds-card-order-id">#SVR{order.order_number}</span>
                         <span className="kds-card-table-badge">
@@ -3002,6 +3148,31 @@ function Kitchen({
                         <User size={13} style={{ color: '#ea580c', flexShrink: 0 }} />
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.customer_name || 'Guest'}</span>
                       </div>
+                      {cr && (
+                        <div style={{ background: '#fee2e2', border: '1.5px solid #ef4444', borderRadius: 10, padding: '8px 10px', margin: '6px 0 8px', color: '#991b1b', fontSize: 12 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800 }}>
+                            <AlertTriangle size={14} style={{ color: '#dc2626' }} />
+                            <span>Cancel Requested by Customer</span>
+                          </div>
+                          <div style={{ marginTop: 2, fontSize: 11, color: '#7f1d1d' }}>"{cr.reason}"</div>
+                          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                            <button
+                              type="button"
+                              style={{ flex: 1, padding: '6px 8px', borderRadius: 6, background: '#dc2626', color: '#fff', border: 'none', fontWeight: 800, fontSize: 11, cursor: 'pointer' }}
+                              onClick={() => handleApproveCancel(order.id, cr.id, order.table_label, order.order_number)}
+                            >
+                              ✓ Approve Cancel
+                            </button>
+                            <button
+                              type="button"
+                              style={{ padding: '6px 8px', borderRadius: 6, background: '#ffffff', color: '#4b5563', border: '1px solid #d1d5db', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
+                              onClick={() => handleRejectCancel(cr.id, order.order_number)}
+                            >
+                              ✕ Decline
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       <div className="kds-card-items-box">
                         {order.items.map((it: any) => (
                           <div className="kds-card-item-row" key={it.id}>
@@ -3024,7 +3195,7 @@ function Kitchen({
                         <Bell size={15} /> Mark as Served
                       </button>
                     </article>
-                  ))}
+                  );})}
                   {readyOrders.length === 0 && (
                     <div style={{ textAlign: 'center', padding: '40px 16px', color: '#a07d6a', fontSize: 13 }}>
                       <CheckCircle2 size={32} style={{ margin: '0 auto 8px', color: '#16a34a' }} />
@@ -5726,6 +5897,14 @@ function CustomerPage({
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [busy, setBusy] = useState(false);
 
+  // Cancellation Request State
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelReason, setCancelReason] = useState('Ordered by mistake / wrong dish');
+  const [customCancelReason, setCustomCancelReason] = useState('');
+  const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
+  const [cancellationRequested, setCancellationRequested] = useState(false);
+  const [cancellationRejected, setCancellationRejected] = useState(false);
+
   const [scannerOpen, setScannerOpen] = useState(false);
   const [language, setLanguage] = useState<'en' | 'ta'>('en');
 
@@ -5851,6 +6030,9 @@ function CustomerPage({
             table_label: savedTable || '—',
             customer_name: savedName || 'Guest'
           });
+          if (localStorage.getItem(`servora_cancel_req_${savedOrderId}`) === 'true') {
+            setCancellationRequested(true);
+          }
         }
       } catch { }
     }
@@ -5864,27 +6046,61 @@ function CustomerPage({
     const pull = async () => {
       if (!supabase || !order?.id) return;
       try {
+        let currentOrdStatus = '';
         if (order.access_token) {
           const { data } = await supabase.rpc('get_order_public', { p_order_id: order.id, p_access_token: order.access_token });
           if (alive && data) {
             setLiveOrder(data);
-            return;
+            currentOrdStatus = data.status || '';
           }
         }
-        const { data: ord } = await supabase.from('orders').select('*, order_items(*)').eq('id', order.id).maybeSingle();
-        if (alive && ord) setLiveOrder(ord);
+        if (!currentOrdStatus) {
+          const { data: ord } = await supabase.from('orders').select('*, order_items(*)').eq('id', order.id).maybeSingle();
+          if (alive && ord) {
+            setLiveOrder(ord);
+            currentOrdStatus = ord.status || '';
+          }
+        }
+
+        if (currentOrdStatus === 'cancelled') {
+          setCancellationRequested(false);
+        } else {
+          // Check if there is an active cancellation request in service_requests
+          const { data: sReqs } = await supabase
+            .from('service_requests')
+            .select('*')
+            .ilike('note', `%${order.id}%`)
+            .order('created_at', { ascending: false })
+            .limit(1);
+          if (alive && sReqs && sReqs.length > 0) {
+            const req = sReqs[0];
+            if (req.status === 'new') {
+              setCancellationRequested(true);
+            } else if (req.note?.includes('[CANCEL_REJECTED]') || req.status === 'cancelled') {
+              setCancellationRequested(false);
+              if (currentOrdStatus !== 'cancelled') setCancellationRejected(true);
+            }
+          }
+        }
       } catch { }
     };
     pull();
-    const timer = window.setInterval(pull, 4000);
+    const timer = window.setInterval(pull, 3000);
 
     const channel = supabase.channel(`order-live-tracker-${order.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `id=eq.${order.id}` }, (payload) => {
         if (alive && payload.new) {
           setLiveOrder((prev: any) => ({ ...prev, ...payload.new }));
+          if ((payload.new as any).status === 'cancelled') {
+            setCancellationRequested(false);
+            notify(setNotice, 'Your cancellation request was approved by staff. Order is cancelled.', 'info');
+          }
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items', filter: `order_id=eq.${order.id}` }, () => {
+        pull();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'service_requests' }, () => {
         pull();
       })
       .subscribe();
@@ -6019,6 +6235,29 @@ function CustomerPage({
 
   const [helpBusy, setHelpBusy] = useState('');
   async function requestService(type: string, label: string) {
+    if (type === 'cancel_order') {
+      const activeOrd = order || liveOrder;
+      if (!activeOrd?.id) {
+        notify(setNotice, 'No active order placed yet to cancel.', 'info');
+        return;
+      }
+      const st = ((liveOrder?.status || order?.status || '') as string).toLowerCase();
+      if (['served', 'completed'].includes(st)) {
+        notify(setNotice, 'This order is already served. Please speak with the floor staff or billing counter.', 'info');
+        return;
+      }
+      if (st === 'cancelled') {
+        notify(setNotice, 'This order is already cancelled.', 'info');
+        return;
+      }
+      if (cancellationRequested) {
+        notify(setNotice, 'Cancellation request is already pending review with Kitchen & Billing Counter.', 'info');
+        return;
+      }
+      setShowCancelModal(true);
+      return;
+    }
+
     if (!liveMode) {
       notify(setNotice, `${label} requested (demo mode). Staff alerted.`, 'success');
       return;
@@ -6041,6 +6280,41 @@ function CustomerPage({
     }
   }
 
+  async function handleRequestCancellation() {
+    const activeOrdId = order?.id || liveOrder?.id;
+    if (!activeOrdId || isSubmittingCancel) return;
+    const reasonToUse = cancelReason === 'Other reason' ? (customCancelReason.trim() || 'Customer requested cancellation') : cancelReason;
+    setIsSubmittingCancel(true);
+    try {
+      const orderNum = order?.order_number || liveOrder?.order_number || '1001';
+      const tbl = tableDisplay || order?.table_label || 'T01';
+      const cust = name || order?.customer_name || 'Guest';
+
+      if (liveMode) {
+        await submitOrderCancellationRequest({
+          orderId: activeOrdId,
+          orderNumber: orderNum,
+          tableLabel: tbl,
+          reason: reasonToUse,
+          customerName: cust
+        });
+      }
+
+      try {
+        localStorage.setItem(`servora_cancel_req_${activeOrdId}`, 'true');
+      } catch { }
+
+      setCancellationRequested(true);
+      setCancellationRejected(false);
+      setShowCancelModal(false);
+      notify(setNotice, `Cancellation request submitted for Order #${orderNum}. Sent to Kitchen & Billing Counter for approval.`, 'success');
+    } catch (err: any) {
+      notify(setNotice, err.message || 'Could not send cancellation request. Please inform staff directly.', 'error');
+    } finally {
+      setIsSubmittingCancel(false);
+    }
+  }
+
   const helpBar = (
     <div className="help-bar">
       <span className="help-bar-title"><Bell size={15} /> Need something?</span>
@@ -6048,9 +6322,12 @@ function CustomerPage({
         ['call_waiter', 'Call waiter', <Bell size={14} key="call" />],
         ['water', 'Water', <Droplets size={14} key="water" />],
         ['plates', 'Extra plates', <Utensils size={14} key="plates" />],
-        ['bill', 'Request bill', <Receipt size={14} key="bill" />]
+        ['bill', 'Request bill', <Receipt size={14} key="bill" />],
+        ...((order || liveOrder) && !['served', 'completed', 'cancelled'].includes(((liveOrder?.status || order?.status || '') as string).toLowerCase())
+          ? [['cancel_order', 'Cancel order', <XCircle size={14} key="cancel" />]]
+          : [])
       ].map(([type, label, icon]) => (
-        <button key={type as string} type="button" className="help-chip" disabled={helpBusy === type} onClick={() => requestService(type as string, label as string)}>
+        <button key={type as string} type="button" className={`help-chip ${type === 'cancel_order' ? 'help-chip-cancel' : ''}`} disabled={helpBusy === type} onClick={() => requestService(type as string, label as string)}>
           <span style={{ display: 'inline-flex', alignItems: 'center' }}>{icon as ReactNode}</span> {label as string}
         </button>
       ))}
@@ -6225,6 +6502,11 @@ function CustomerPage({
         /* ============================================================== */
         <div className="customer-gate-screen">
           <div className="mockup-dine-enjoy-modal">
+            {/* Top Close Button to Exit Dine-In */}
+            <Link to="/" className="dine-in-close-corner-btn" title="Exit Dine-In Menu">
+              <X size={18} />
+            </Link>
+
             {/* Top Flourishes + Servora Logo */}
             <div className="checkin-brand-header">
               <span className="flourish-swirl">~ ❖ ~</span>
@@ -6299,6 +6581,32 @@ function CustomerPage({
             {/* Live Progress Tracker (4 Milestones) — driven by the real order status */}
             {(() => {
               const st = (liveOrder?.status || order.status || 'received') as string;
+              if (st === 'cancelled') {
+                return (
+                  <div style={{
+                    margin: '18px 0',
+                    background: '#fef2f2',
+                    border: '1.5px solid #fecaca',
+                    borderRadius: 16,
+                    padding: '20px 22px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 14,
+                    boxShadow: '0 4px 14px rgba(220, 38, 38, 0.08)'
+                  }}>
+                    <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#fee2e2', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <XCircle size={26} />
+                    </div>
+                    <div>
+                      <b style={{ color: '#991b1b', fontSize: 16, display: 'block' }}>Order #{order.order_number} Cancelled</b>
+                      <span style={{ color: '#b91c1c', fontSize: 13, display: 'block', marginTop: 2 }}>
+                        This order has been officially cancelled with Kitchen &amp; Billing Counter approval.
+                      </span>
+                    </div>
+                  </div>
+                );
+              }
+
               const stage = ['served', 'completed'].includes(st)
                 ? 3
                 : ['ready_for_collection', 'ready_for_serving', 'ready'].includes(st)
@@ -6343,6 +6651,77 @@ function CustomerPage({
                       ))}
                     </div>
                   )}
+
+                  {/* Cancellation Request Status & Action Button */}
+                  {cancellationRequested ? (
+                    <div style={{
+                      margin: '14px 0 6px',
+                      background: '#fff7ed',
+                      border: '1.5px solid #fed7aa',
+                      borderRadius: 14,
+                      padding: '14px 18px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 12
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#ffedd5', color: '#ea580c', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <Clock size={18} />
+                        </div>
+                        <div>
+                          <b style={{ color: '#9a3412', fontSize: 13, display: 'block' }}>Cancellation Request Sent (Pending Approval)</b>
+                          <span style={{ color: '#c2410c', fontSize: 12 }}>
+                            Waiting for Kitchen / Billing Counter staff to review and approve your cancellation request.
+                          </span>
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 11, background: '#ea580c', color: '#ffffff', padding: '4px 8px', borderRadius: 6, fontWeight: 800, whiteSpace: 'nowrap' }}>
+                        PENDING
+                      </span>
+                    </div>
+                  ) : cancellationRejected ? (
+                    <div style={{
+                      margin: '12px 0 6px',
+                      background: '#fff1f2',
+                      border: '1.5px solid #fecdd3',
+                      borderRadius: 12,
+                      padding: '12px 16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      color: '#be123c',
+                      fontSize: 13
+                    }}>
+                      <AlertTriangle size={18} style={{ flexShrink: 0 }} />
+                      <span>Cancellation request was declined because cooking is finished or food is being served.</span>
+                    </div>
+                  ) : !['served', 'completed'].includes(st) ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowCancelModal(true)}
+                      style={{
+                        width: '100%',
+                        margin: '12px 0 4px',
+                        padding: '11px 16px',
+                        borderRadius: 12,
+                        border: '1.5px dashed #fca5a5',
+                        background: '#fff5f5',
+                        color: '#dc2626',
+                        fontSize: 13,
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <XCircle size={16} />
+                      <span>Request Order Cancellation (Kitchen / Billing Approval)</span>
+                    </button>
+                  ) : null}
                 </>
               );
             })()}
@@ -6508,16 +6887,35 @@ function CustomerPage({
               <button
                 type="button"
                 className="btn-order-more"
-                onClick={() => setOrder(null)}
+                onClick={() => {
+                  try {
+                    if (liveOrder?.status === 'cancelled') {
+                      localStorage.removeItem('servora_active_order_id');
+                      localStorage.removeItem('servora_active_order_token');
+                      localStorage.removeItem('servora_active_order_num');
+                    }
+                  } catch { }
+                  setOrder(null);
+                  setCart([]);
+                  setCancellationRequested(false);
+                }}
               >
-                <MenuIcon size={16} /> Order More
+                <MenuIcon size={16} /> {liveOrder?.status === 'cancelled' ? 'Order Fresh Dishes' : 'Order More'}
               </button>
               <button
                 type="button"
                 className="btn-back-home"
                 onClick={() => {
+                  try {
+                    if (liveOrder?.status === 'cancelled') {
+                      localStorage.removeItem('servora_active_order_id');
+                      localStorage.removeItem('servora_active_order_token');
+                      localStorage.removeItem('servora_active_order_num');
+                    }
+                  } catch { }
                   setOrder(null);
                   setCustomerReady(false);
+                  setCancellationRequested(false);
                 }}
               >
                 <ArrowLeft size={16} /> Back to Table Dining
@@ -6540,14 +6938,23 @@ function CustomerPage({
             >
               <ArrowLeft size={16} strokeWidth={2.5} /> <span>Back</span>
             </Link>
-            <Link
-              to="/customer-login"
-              className="customer-portal-pill"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
-              title="Customer Login with Mobile OTP"
-            >
-              <User size={15} /> <span>Customer Login</span>
-            </Link>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Link
+                to="/customer-login"
+                className="customer-portal-pill"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+                title="Customer Login with Mobile OTP"
+              >
+                <User size={15} /> <span>Customer Login</span>
+              </Link>
+              <Link
+                to="/"
+                className="dine-in-close-btn"
+                title="Exit Dine-In"
+              >
+                <X size={18} />
+              </Link>
+            </div>
           </div>
 
           <div className="mockup-checkin-modal">
@@ -6980,6 +7387,15 @@ function CustomerPage({
                   <ShoppingBag size={18} />
                   <span className="cart-badge-count">{totalItems}</span>
                 </button>
+
+                <Link
+                  to="/"
+                  className="dine-in-close-btn"
+                  title="Exit Dine-In Menu"
+                  style={{ marginLeft: 6 }}
+                >
+                  <X size={18} />
+                </Link>
               </div>
             </header>
 
@@ -7534,6 +7950,142 @@ function CustomerPage({
           </div>
         );
       })()}
+
+      {/* Universal Cancellation Request Modal (Accessible from Step 2, Step 3 & Help Bar) */}
+      {showCancelModal && (
+        <div
+          className="cancel-modal-backdrop"
+          onClick={e => {
+            if (e.target === e.currentTarget) setShowCancelModal(false);
+          }}
+        >
+          <div className="cancel-modal-card">
+            {/* Dedicated Top Right Close Button */}
+            <button
+              type="button"
+              className="cancel-modal-close-btn"
+              onClick={() => setShowCancelModal(false)}
+              title="Close modal"
+              aria-label="Close"
+            >
+              <X size={18} />
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+              <div style={{ width: 44, height: 44, borderRadius: 12, background: '#fee2e2', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <XCircle size={24} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#3b1e10' }}>Request Order Cancellation</h3>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: '#8a6452' }}>
+                  Order #{order?.order_number || liveOrder?.order_number || '---'} • Table {tableDisplay || order?.table_label || '---'}
+                </p>
+              </div>
+            </div>
+
+            <div style={{ background: '#fffaf5', border: '1px solid #fed7aa', borderRadius: 12, padding: 12, marginBottom: 16, fontSize: 12.5, color: '#9a3412', lineHeight: 1.5 }}>
+              ⚠️ <b>Approval Required:</b><br />
+              Because dishes may already be queued or cooking in the kitchen, your cancellation request will be sent to the <b>Kitchen &amp; Billing Counter</b> for review and approval.
+            </div>
+
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#422116', marginBottom: 10 }}>
+              Select a reason for cancellation:
+            </label>
+            <div className="cancel-reason-list">
+              {[
+                'Ordered by mistake / wrong dish',
+                'Want to modify order items',
+                'Preparation taking too long',
+                'Need to leave urgently',
+                'Other reason'
+              ].map(r => (
+                <label
+                  key={r}
+                  className={`cancel-reason-option ${cancelReason === r ? 'selected' : ''}`}
+                  onClick={() => setCancelReason(r)}
+                >
+                  <input
+                    type="radio"
+                    name="cancelReason"
+                    className="cancel-radio-input"
+                    checked={cancelReason === r}
+                    onChange={() => setCancelReason(r)}
+                  />
+                  <span className="cancel-reason-text">{r}</span>
+                </label>
+              ))}
+            </div>
+
+            {cancelReason === 'Other reason' && (
+              <div style={{ marginBottom: 18 }}>
+                <input
+                  type="text"
+                  placeholder="Please type your reason here..."
+                  value={customCancelReason}
+                  onChange={e => setCustomCancelReason(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '11px 14px',
+                    borderRadius: 10,
+                    border: '1.5px solid #ebdcd0',
+                    fontSize: 13.5,
+                    boxSizing: 'border-box',
+                    outline: 'none',
+                    color: '#3b1e10'
+                  }}
+                  autoFocus
+                />
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+              <button
+                type="button"
+                disabled={isSubmittingCancel}
+                onClick={() => setShowCancelModal(false)}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: 12,
+                  border: '1.5px solid #ebdcd0',
+                  background: '#ffffff',
+                  color: '#422116',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  fontSize: 14,
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                Keep Order
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingCancel}
+                onClick={handleRequestCancellation}
+                style={{
+                  flex: 1.25,
+                  padding: '12px',
+                  borderRadius: 12,
+                  border: 'none',
+                  background: '#dc2626',
+                  color: '#ffffff',
+                  fontWeight: 800,
+                  cursor: isSubmittingCancel ? 'not-allowed' : 'pointer',
+                  fontSize: 14,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  boxShadow: '0 4px 12px rgba(220, 38, 38, 0.35)',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                {isSubmittingCancel ? 'Sending...' : 'Send Cancel Request'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
