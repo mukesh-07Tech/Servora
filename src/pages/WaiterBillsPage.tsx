@@ -18,7 +18,7 @@ import {
   Utensils,
   X
 } from 'lucide-react';
-import { DEFAULT_TABLES, getCached, getOrders, getTables, getPendingCancellationRequests, approveOrderCancellation, rejectOrderCancellation, CancellationRequestInfo } from '../lib/data';
+import { DEFAULT_TABLES, getCached, getOrders, getTables, getPendingCancellationRequests, approveOrderCancellation, rejectOrderCancellation, CancellationRequestInfo, matchTableLabels, lookupMenuItemPrice } from '../lib/data';
 import { money, supabase } from '../lib/supabase';
 
 export function WaiterBillsPage({
@@ -110,26 +110,33 @@ export function WaiterBillsPage({
 
   // Filter tables that have an active order or requested bill
   const billingTables = tables.filter(t => {
-    const hasOrder = orders.some(o => o.table_label === t.table_number && o.payment_status !== 'paid');
+    const hasOrder = orders.some(o => matchTableLabels(o.table_label, t.table_number) && o.payment_status !== 'paid');
     return hasOrder || t.status === 'bill_requested' || t.status === 'occupied';
   });
 
-  const currentTable = tables.find(t => t.table_number === selectedTableNum) || billingTables[0] || tables[0];
+  const currentTable = tables.find(t => matchTableLabels(t.table_number, selectedTableNum)) || billingTables[0] || tables[0];
   const tableOrders = orders.filter(
-    o => o.table_label === currentTable?.table_number && o.payment_status !== 'paid'
+    o => matchTableLabels(o.table_label, currentTable?.table_number) && o.payment_status !== 'paid'
   );
   const [mergeAllOrders, setMergeAllOrders] = useState(true);
 
   // If table has multiple unpaid orders and mergeAllOrders is enabled, merge them all into a single settlement
   const activeOrders = (tableOrders.length > 1 && mergeAllOrders)
     ? tableOrders
-    : (tableOrders.length > 0 ? [tableOrders[0]] : (orders.find(o => o.table_label === currentTable?.table_number) ? [orders.find(o => o.table_label === currentTable?.table_number)!] : []));
+    : (tableOrders.length > 0 ? [tableOrders[0]] : (orders.find(o => matchTableLabels(o.table_label, currentTable?.table_number)) ? [orders.find(o => matchTableLabels(o.table_label, currentTable?.table_number))!] : []));
   const activeOrder = activeOrders[0] || null;
 
   const allOrderItems = activeOrders.flatMap(o => o.order_items || []);
   const subtotal = activeOrders.reduce((sum, o) => {
     const raw = (o.order_items || []) as any[];
-    const itemsSum = raw.reduce((s: number, it: any) => s + (Number(it.line_total) || (Number(it.unit_price) || 0) * (it.quantity || 1)), 0);
+    const itemsSum = raw.reduce((s: number, it: any) => {
+      let unit = Number(it.unit_price) || 0;
+      if (unit <= 0) {
+        unit = lookupMenuItemPrice(it.menu_item_id) || lookupMenuItemPrice(it.item_name) || 0;
+      }
+      const line = Number(it.line_total) > 0 ? Number(it.line_total) : (unit * (it.quantity || 1));
+      return s + line;
+    }, 0);
     return sum + (Number(o.subtotal) > 0 ? Number(o.subtotal) : (itemsSum > 0 ? itemsSum : (Number(o.total) > 0 ? Math.round(Number(o.total) / 1.05) : 0)));
   }, 0);
   const discountAmount = Number(((subtotal * discountPercent) / 100).toFixed(2));
@@ -193,7 +200,7 @@ export function WaiterBillsPage({
         // Also sync order_items status for these orders to completed
         try {
           await supabase.from('order_items').update({ status: 'completed' }).in('order_id', orderIds);
-        } catch {}
+        } catch { }
 
         // Free Table to available
         if (currentTable) {

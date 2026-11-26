@@ -110,6 +110,31 @@ export function invalidateCache(key?: string): void {
   }
 }
 
+export function matchTableLabels(a?: string | null, b?: string | null): boolean {
+  if (!a || !b) return false;
+  const cleanA = a.trim().toLowerCase();
+  const cleanB = b.trim().toLowerCase();
+  if (cleanA === cleanB) return true;
+  const numA = cleanA.replace(/\D/g, '');
+  const numB = cleanB.replace(/\D/g, '');
+  if (numA && numB && Number(numA) === Number(numB)) return true;
+  return false;
+}
+
+export function lookupMenuItemPrice(
+  itemIdOrName?: string | null,
+  cachedList?: any[]
+): number {
+  if (!itemIdOrName) return 0;
+  const list = (cachedList && cachedList.length > 0) ? cachedList : (getCached<any[]>('menu_all') || getCached<any[]>('menu_available') || DEFAULT_MENU);
+  const target = String(itemIdOrName).trim().toLowerCase();
+  const found = list.find((m: any) =>
+    (m.id && String(m.id).toLowerCase() === target) ||
+    (m.name && m.name.trim().toLowerCase() === target)
+  );
+  return found ? (Number(found.price) || 0) : 0;
+}
+
 export async function withTimeout<T>(promise: Promise<T>, timeoutMs = 4500, fallbackVal?: T): Promise<T> {
   let timer: any;
   const timeoutPromise = new Promise<T>((resolve) => {
@@ -268,20 +293,38 @@ async function fetchOrdersFromDb(opts: { activeOnly?: boolean } = {}) {
   const { data, error } = await query.order('created_at', { ascending: false }).limit(200);
   if (error) throw error;
 
-  // Rapidly associate image_url from cached menu items without requiring a costly 3-level SQL join
-  const cachedMenu = getCached<any[]>('menu_all') || getCached<any[]>('menu_available') || [];
+  // Rapidly associate image_url and fallback price from cached menu items
+  const cachedMenu = getCached<any[]>('menu_all') || getCached<any[]>('menu_available') || DEFAULT_MENU;
   const imageMap = new Map<string, string>();
+  const priceMap = new Map<string, number>();
   for (const m of cachedMenu) {
-    if (m.id && m.image_url) imageMap.set(m.id, m.image_url);
-    if (m.name && m.image_url) imageMap.set(m.name.trim().toLowerCase(), m.image_url);
+    if (m.id) {
+      if (m.image_url) imageMap.set(m.id, m.image_url);
+      if (Number(m.price) > 0) priceMap.set(m.id, Number(m.price));
+    }
+    if (m.name) {
+      const lowerName = m.name.trim().toLowerCase();
+      if (m.image_url) imageMap.set(lowerName, m.image_url);
+      if (Number(m.price) > 0) priceMap.set(lowerName, Number(m.price));
+    }
   }
 
   const cleaned = (data || []).map((o: any) => {
     const rawItems = o.order_items || [];
     const items = rawItems.map((it: any) => {
       const qty = it.quantity || 1;
-      const unit = Number(it.unit_price) || 0;
-      const line = Number(it.line_total) || (qty * unit);
+      let unit = Number(it.unit_price) || 0;
+      if (unit <= 0) {
+        unit = (it.menu_item_id && priceMap.get(it.menu_item_id)) ||
+               (it.item_name && priceMap.get(it.item_name.trim().toLowerCase())) ||
+               lookupMenuItemPrice(it.menu_item_id, cachedMenu) ||
+               lookupMenuItemPrice(it.item_name, cachedMenu) ||
+               0;
+      }
+      let line = Number(it.line_total) || 0;
+      if (line <= 0) {
+        line = qty * unit;
+      }
       return {
         ...it,
         quantity: qty,
@@ -295,10 +338,10 @@ async function fetchOrdersFromDb(opts: { activeOnly?: boolean } = {}) {
       };
     });
 
-    const itemsSum = items.reduce((s: number, x: any) => s + (x.line_total || 0), 0);
+    const itemsSum = items.reduce((s: number, x: any) => s + (Number(x.line_total) || 0), 0);
     const subtotal = Number(o.subtotal) > 0 ? Number(o.subtotal) : itemsSum;
-    const tax = Number(o.tax) > 0 ? Number(o.tax) : Math.round(subtotal * 0.05);
-    const totalAmount = Number(o.total) > 0 ? Number(o.total) : (subtotal + tax);
+    const tax = Number(o.tax) > 0 ? Number(o.tax) : Number((subtotal * 0.05).toFixed(2));
+    const totalAmount = Number(o.total) > 0 ? Number(o.total) : Number((subtotal + tax).toFixed(2));
 
     return {
       ...o,

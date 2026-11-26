@@ -6053,7 +6053,31 @@ function CustomerPage({
         if (order.access_token) {
           const { data } = await supabase.rpc('get_order_public', { p_order_id: order.id, p_access_token: order.access_token });
           if (alive && data) {
-            setLiveOrder(data);
+            // Enrich items with menu pricing if missing
+            const rawItems = (data.order_items || []) as any[];
+            const enrichedItems = rawItems.map((it: any) => {
+              const qty = it.quantity || 1;
+              let unit = Number(it.unit_price) || 0;
+              if (unit <= 0) {
+                const menuItem = menu.find((m: any) => m.id === it.menu_item_id || m.name?.trim().toLowerCase() === it.item_name?.trim().toLowerCase());
+                unit = menuItem?.price || 0;
+              }
+              const line = Number(it.line_total) > 0 ? Number(it.line_total) : (unit * qty);
+              return { ...it, unit_price: unit, line_total: line };
+            });
+            const itemsSum = enrichedItems.reduce((acc: number, it: any) => acc + (it.line_total || 0), 0);
+            const enrichedSubtotal = Number(data.subtotal) > 0 ? Number(data.subtotal) : (itemsSum > 0 ? itemsSum : (order.subtotal || 0));
+            const enrichedTax = Number(data.tax) > 0 ? Number(data.tax) : Number((enrichedSubtotal * 0.05).toFixed(2));
+            const enrichedTotal = Number(data.total) > 0 ? Number(data.total) : Number((enrichedSubtotal + enrichedTax).toFixed(2));
+
+            const finalData = {
+              ...data,
+              subtotal: enrichedSubtotal,
+              tax: enrichedTax,
+              total: enrichedTotal,
+              order_items: enrichedItems
+            };
+            setLiveOrder(finalData);
             currentOrdStatus = data.status || '';
           }
         }
@@ -6387,8 +6411,17 @@ function CustomerPage({
           p_idempotency_key: idempotencyKey || crypto.randomUUID()
         });
 
+        const calculatedSubtotal = cart.reduce((sum, it) => sum + (it.item.price * it.quantity), 0);
+        const calculatedTax = Math.round(calculatedSubtotal * 5) / 100;
+        const calculatedTotal = calculatedSubtotal + calculatedTax;
+
         if (!error && !data?.error && (data?.order || data)?.id) {
-          orderInfo = data?.order || data;
+          orderInfo = {
+            ...(data?.order || data),
+            subtotal: (data?.order || data).subtotal || calculatedSubtotal,
+            tax: (data?.order || data).tax || calculatedTax,
+            total: (data?.order || data).total || calculatedTotal
+          };
         }
       } catch (rpcErr) {
         console.warn('place_order RPC error, using direct DB insert:', rpcErr);
@@ -6461,7 +6494,10 @@ function CustomerPage({
         access_token: orderInfo.access_token || accessToken,
         status: orderInfo.status || 'received',
         table_label: orderInfo.table_number || table || tokenToUse,
-        customer_name: name.trim() || 'Guest'
+        customer_name: name.trim() || 'Guest',
+        subtotal: orderInfo.subtotal,
+        tax: orderInfo.tax,
+        total: orderInfo.total
       });
       // Store in localStorage so tracking persists across page refreshes or tab reloads
       try {

@@ -36,7 +36,7 @@ import {
   XCircle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { getCached, submitOrderCancellationRequest } from '../lib/data';
+import { getCached, submitOrderCancellationRequest, lookupMenuItemPrice } from '../lib/data';
 
 export function CustomerDashboardPage({
   setNotice
@@ -1088,10 +1088,17 @@ export function CustomerDashboardPage({
 
                     {(() => {
                       const curItems = activeOrderItems || [];
-                      const itemsSum = curItems.reduce((acc: number, it: any) => acc + (Number(it.line_total) || (Number(it.unit_price) || 0) * (it.quantity || 1)), 0);
+                      const itemsSum = curItems.reduce((acc: number, it: any) => {
+                        let unit = Number(it.unit_price) || 0;
+                        if (unit <= 0) {
+                          unit = lookupMenuItemPrice(it.menu_item_id) || lookupMenuItemPrice(it.item_name) || 0;
+                        }
+                        const line = Number(it.line_total) > 0 ? Number(it.line_total) : (unit * (it.quantity || 1));
+                        return acc + line;
+                      }, 0);
                       const subVal = Number(activeOrder.subtotal) > 0 ? Number(activeOrder.subtotal) : itemsSum;
-                      const taxVal = Number(activeOrder.tax) > 0 ? Number(activeOrder.tax) : Math.round(subVal * 0.05);
-                      const totVal = Number(activeOrder.total) > 0 ? Number(activeOrder.total) : Number(activeOrder.total_amount) > 0 ? Number(activeOrder.total_amount) : (subVal + taxVal);
+                      const taxVal = Number(activeOrder.tax) > 0 ? Number(activeOrder.tax) : Number((subVal * 0.05).toFixed(2));
+                      const totVal = Number(activeOrder.total) > 0 ? Number(activeOrder.total) : Number(activeOrder.total_amount) > 0 ? Number(activeOrder.total_amount) : Number((subVal + taxVal).toFixed(2));
 
                       return (
                         <>
