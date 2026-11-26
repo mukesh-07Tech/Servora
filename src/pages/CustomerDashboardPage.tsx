@@ -660,6 +660,61 @@ export function CustomerDashboardPage({
                   <Utensils size={18} /> View Menu &amp; Order Now →
                 </Link>
               </div>
+            ) : String(activeOrder.status).toLowerCase() === 'cancelled' ? (
+              <div
+                style={{
+                  background: '#ffffff',
+                  borderRadius: '24px',
+                  padding: '50px 30px',
+                  textAlign: 'center',
+                  border: '1.5px solid #fed7aa',
+                  boxShadow: '0 4px 20px rgba(35, 18, 9, 0.05)'
+                }}
+              >
+                <div
+                  style={{
+                    width: 72,
+                    height: 72,
+                    borderRadius: '50%',
+                    background: '#fef2f2',
+                    color: '#dc2626',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: '16px',
+                    border: '2px solid #fecaca'
+                  }}
+                >
+                  <XCircle size={38} />
+                </div>
+                <h3 style={{ fontSize: '22px', fontWeight: 900, color: '#991b1b', margin: '0 0 6px' }}>
+                  Order #{activeOrder.order_number ? `SVR${activeOrder.order_number}` : ''} Cancelled
+                </h3>
+                <p style={{ margin: '0 0 16px', fontSize: '14px', color: '#7f1d1d', fontWeight: 600 }}>
+                  This order has been officially cancelled with Kitchen &amp; Billing Counter approval.
+                </p>
+                <div style={{ maxWidth: 460, margin: '0 auto 24px', background: '#fffaf5', border: '1px solid #fed7aa', borderRadius: 14, padding: 14, fontSize: 13, color: '#9a3412', textAlign: 'left', lineHeight: 1.5 }}>
+                  Table {activeOrder.table_label || 'T01'} was freed and all ordered items voided. No bills or charges have been incurred.
+                </div>
+                <Link
+                  to="/order"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '12px 28px',
+                    borderRadius: '14px',
+                    background: '#ea580c',
+                    color: '#ffffff',
+                    fontWeight: 800,
+                    fontSize: '15px',
+                    textDecoration: 'none',
+                    boxShadow: '0 4px 16px rgba(234, 88, 12, 0.4)'
+                  }}
+                >
+                  <Utensils size={18} /> View Menu &amp; Place New Order →
+                </Link>
+              </div>
             ) : (
               <>
                 {/* 1. Order Info Strip (Matching Reference Image) */}
@@ -888,28 +943,6 @@ export function CustomerDashboardPage({
                 </div>
 
                 {/* Cancellation Status Banners */}
-                {activeOrder.status === 'cancelled' && (
-                  <div style={{
-                    background: '#fef2f2',
-                    border: '1.5px solid #fecaca',
-                    borderRadius: 16,
-                    padding: '16px 20px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 14
-                  }}>
-                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#fee2e2', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <XCircle size={22} />
-                    </div>
-                    <div>
-                      <b style={{ color: '#991b1b', fontSize: 15, display: 'block' }}>Order Cancelled</b>
-                      <span style={{ color: '#b91c1c', fontSize: 13, display: 'block', marginTop: 2 }}>
-                        This order has been officially cancelled with Kitchen &amp; Billing Counter approval.
-                      </span>
-                    </div>
-                  </div>
-                )}
-
                 {cancellationRequested && (
                   <div style={{
                     background: '#fff7ed',
@@ -1109,7 +1142,7 @@ export function CustomerDashboardPage({
                             if (!localServedTime && currentStage === 3) {
                               const rawTime = activeOrder.served_at || activeOrder.updated_at;
                               localServedTime = rawTime ? new Date(rawTime).getTime() : Date.now();
-                              try { localStorage.setItem(servedKey, String(localServedTime)); } catch {}
+                              try { localStorage.setItem(servedKey, String(localServedTime)); } catch { }
                             }
                             const elapsedSec = currentStage === 3 && localServedTime > 0 ? Math.floor((Date.now() - localServedTime) / 1000) : 0;
                             const remainingSec = Math.max(0, 600 - elapsedSec);
@@ -1477,7 +1510,7 @@ export function CustomerDashboardPage({
                               <input
                                 type="checkbox"
                                 checked={isChecked}
-                                onChange={() => {}}
+                                onChange={() => { }}
                                 style={{ width: 16, height: 16, accentColor: '#ea580c', cursor: 'pointer' }}
                               />
                               <div>

@@ -652,7 +652,7 @@ function ServoraSplitLogin({
           </form>
         </div>
       </div>
-      
+
     </div>
   );
 }
@@ -1091,7 +1091,7 @@ function StaffRegister({ setNotice }: { setNotice: (n: Notice | null) => void })
           </form>
         )}
       </div>
-      
+
     </div>
   );
 }
@@ -1699,7 +1699,7 @@ function StaffApp({
           )}
         </div>
       </main>
-      
+
     </div>
   );
 }
@@ -1712,7 +1712,7 @@ function SectionTitle({ title, desc, action }: { title: string; desc: string; ac
         <p>{desc}</p>
       </div>
       {action}
-      
+
     </div>
   );
 }
@@ -1727,7 +1727,7 @@ function SetupNotice() {
           Configure <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> in <code>.env</code>.
         </p>
       </div>
-      
+
     </div>
   );
 }
@@ -1824,7 +1824,7 @@ function Stat({ icon: Icon, label, value, tone }: { icon: any; label: string; va
         <small>{label}</small>
         <b>{value}</b>
       </div>
-      
+
     </div>
   );
 }
@@ -1906,7 +1906,7 @@ function OrderTable({
           ))}
         </tbody>
       </table>
-      
+
     </div>
   );
 }
@@ -2957,66 +2957,67 @@ function Kitchen({
                   {newOrders.map(order => {
                     const cr = cancelRequests.find(c => c.orderId === order.id || String(c.orderNumber) === String(order.order_number));
                     return (
-                    <article className={`kds-order-card new-order-card ${cr ? 'has-cancel-request' : ''}`} key={order.id}>
-                      <div className="kds-card-top-row">
-                        <span className="kds-card-order-id">#SVR{order.order_number}</span>
-                        <span className="kds-card-table-badge">
-                          <Monitor size={12} /> {order.table_label}
-                        </span>
-                      </div>
-                      <div className="kds-card-sub-row">
-                        <span>{order.time}</span>
-                        <span className="kds-card-guests-count">
-                          <Users size={13} /> {order.guests} Guests
-                        </span>
-                      </div>
-                      <div className="kds-card-customer-row" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 700, color: '#3b1e10', background: '#fdf7f2', padding: '5px 10px', borderRadius: '8px', border: '1px solid #fae8dc', margin: '4px 0 8px' }}>
-                        <User size={13} style={{ color: '#ea580c', flexShrink: 0 }} />
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.customer_name || 'Guest'}</span>
-                      </div>
-                      {cr && (
-                        <div style={{ background: '#fee2e2', border: '1.5px solid #ef4444', borderRadius: 10, padding: '8px 10px', margin: '6px 0 8px', color: '#991b1b', fontSize: 12 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800 }}>
-                            <AlertTriangle size={14} style={{ color: '#dc2626' }} />
-                            <span>Cancel Requested by Customer</span>
-                          </div>
-                          <div style={{ marginTop: 2, fontSize: 11, color: '#7f1d1d' }}>"{cr.reason}"</div>
-                          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                            <button
-                              type="button"
-                              style={{ flex: 1, padding: '6px 8px', borderRadius: 6, background: '#dc2626', color: '#fff', border: 'none', fontWeight: 800, fontSize: 11, cursor: 'pointer' }}
-                              onClick={() => handleApproveCancel(order.id, cr.id, order.table_label, order.order_number)}
-                            >
-                              ✓ Approve Cancel
-                            </button>
-                            <button
-                              type="button"
-                              style={{ padding: '6px 8px', borderRadius: 6, background: '#ffffff', color: '#4b5563', border: '1px solid #d1d5db', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
-                              onClick={() => handleRejectCancel(cr.id, order.order_number)}
-                            >
-                              ✕ Decline
-                            </button>
-                          </div>
+                      <article className={`kds-order-card new-order-card ${cr ? 'has-cancel-request' : ''}`} key={order.id}>
+                        <div className="kds-card-top-row">
+                          <span className="kds-card-order-id">#SVR{order.order_number}</span>
+                          <span className="kds-card-table-badge">
+                            <Monitor size={12} /> {order.table_label}
+                          </span>
                         </div>
-                      )}
-                      <div className="kds-card-items-box">
-                        {order.items.map((it: any) => (
-                          <div className="kds-card-item-row" key={it.id}>
-                            <span className="kds-card-item-name">• {it.name}</span>
-                            <span className="kds-card-item-qty">x{it.quantity}</span>
+                        <div className="kds-card-sub-row">
+                          <span>{order.time}</span>
+                          <span className="kds-card-guests-count">
+                            <Users size={13} /> {order.guests} Guests
+                          </span>
+                        </div>
+                        <div className="kds-card-customer-row" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 700, color: '#3b1e10', background: '#fdf7f2', padding: '5px 10px', borderRadius: '8px', border: '1px solid #fae8dc', margin: '4px 0 8px' }}>
+                          <User size={13} style={{ color: '#ea580c', flexShrink: 0 }} />
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.customer_name || 'Guest'}</span>
+                        </div>
+                        {cr && (
+                          <div style={{ background: '#fee2e2', border: '1.5px solid #ef4444', borderRadius: 10, padding: '8px 10px', margin: '6px 0 8px', color: '#991b1b', fontSize: 12 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800 }}>
+                              <AlertTriangle size={14} style={{ color: '#dc2626' }} />
+                              <span>Cancel Requested by Customer</span>
+                            </div>
+                            <div style={{ marginTop: 2, fontSize: 11, color: '#7f1d1d' }}>"{cr.reason}"</div>
+                            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                              <button
+                                type="button"
+                                style={{ flex: 1, padding: '6px 8px', borderRadius: 6, background: '#dc2626', color: '#fff', border: 'none', fontWeight: 800, fontSize: 11, cursor: 'pointer' }}
+                                onClick={() => handleApproveCancel(order.id, cr.id, order.table_label, order.order_number)}
+                              >
+                                ✓ Approve Cancel
+                              </button>
+                              <button
+                                type="button"
+                                style={{ padding: '6px 8px', borderRadius: 6, background: '#ffffff', color: '#4b5563', border: '1px solid #d1d5db', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
+                                onClick={() => handleRejectCancel(cr.id, order.order_number)}
+                              >
+                                ✕ Decline
+                              </button>
+                            </div>
                           </div>
-                        ))}
-                      </div>
-                      <button
-                        type="button"
-                        className="kds-btn-accept"
-                        disabled={busyId === order.id}
-                        onClick={() => handleAcceptOrder(order)}
-                      >
-                        <Check size={16} /> Accept Order
-                      </button>
-                    </article>
-                  );})}
+                        )}
+                        <div className="kds-card-items-box">
+                          {order.items.map((it: any) => (
+                            <div className="kds-card-item-row" key={it.id}>
+                              <span className="kds-card-item-name">• {it.name}</span>
+                              <span className="kds-card-item-qty">x{it.quantity}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          className="kds-btn-accept"
+                          disabled={busyId === order.id}
+                          onClick={() => handleAcceptOrder(order)}
+                        >
+                          <Check size={16} /> Accept Order
+                        </button>
+                      </article>
+                    );
+                  })}
                   {newOrders.length === 0 && (
                     <div style={{ textAlign: 'center', padding: '40px 16px', color: '#a07d6a', fontSize: 13 }}>
                       <CheckCircle2 size={32} style={{ margin: '0 auto 8px', color: '#16a34a' }} />
@@ -3037,80 +3038,81 @@ function Kitchen({
                   {prepOrders.map(order => {
                     const cr = cancelRequests.find(c => c.orderId === order.id || String(c.orderNumber) === String(order.order_number));
                     return (
-                    <article className={`kds-order-card in-prep-card ${cr ? 'has-cancel-request' : ''}`} key={order.id}>
-                      <div className="kds-card-top-row">
-                        <span className="kds-card-order-id">#SVR{order.order_number}</span>
-                        <span className="kds-card-table-badge">
-                          <Monitor size={12} /> {order.table_label}
-                        </span>
-                      </div>
-                      <div className="kds-card-sub-row">
-                        <span>{order.time}</span>
-                        <span className="kds-card-guests-count">
-                          <Users size={13} /> {order.guests} Guests
-                        </span>
-                      </div>
-                      <div className="kds-card-customer-row" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 700, color: '#3b1e10', background: '#fdf7f2', padding: '5px 10px', borderRadius: '8px', border: '1px solid #fae8dc', margin: '4px 0 8px' }}>
-                        <User size={13} style={{ color: '#ea580c', flexShrink: 0 }} />
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.customer_name || 'Guest'}</span>
-                      </div>
-                      {cr && (
-                        <div style={{ background: '#fee2e2', border: '1.5px solid #ef4444', borderRadius: 10, padding: '8px 10px', margin: '6px 0 8px', color: '#991b1b', fontSize: 12 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800 }}>
-                            <AlertTriangle size={14} style={{ color: '#dc2626' }} />
-                            <span>Cancel Requested by Customer</span>
-                          </div>
-                          <div style={{ marginTop: 2, fontSize: 11, color: '#7f1d1d' }}>"{cr.reason}"</div>
-                          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                            <button
-                              type="button"
-                              style={{ flex: 1, padding: '6px 8px', borderRadius: 6, background: '#dc2626', color: '#fff', border: 'none', fontWeight: 800, fontSize: 11, cursor: 'pointer' }}
-                              onClick={() => handleApproveCancel(order.id, cr.id, order.table_label, order.order_number)}
-                            >
-                              ✓ Approve Cancel
-                            </button>
-                            <button
-                              type="button"
-                              style={{ padding: '6px 8px', borderRadius: 6, background: '#ffffff', color: '#4b5563', border: '1px solid #d1d5db', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
-                              onClick={() => handleRejectCancel(cr.id, order.order_number)}
-                            >
-                              ✕ Decline
-                            </button>
-                          </div>
+                      <article className={`kds-order-card in-prep-card ${cr ? 'has-cancel-request' : ''}`} key={order.id}>
+                        <div className="kds-card-top-row">
+                          <span className="kds-card-order-id">#SVR{order.order_number}</span>
+                          <span className="kds-card-table-badge">
+                            <Monitor size={12} /> {order.table_label}
+                          </span>
                         </div>
-                      )}
-                      <div className="kds-card-items-box">
-                        {order.items.map((it: any) => (
-                          <div className="kds-card-item-row" key={it.id}>
-                            <span className="kds-card-item-name">• {it.name}</span>
-                            <span className="kds-card-item-qty">x{it.quantity}</span>
+                        <div className="kds-card-sub-row">
+                          <span>{order.time}</span>
+                          <span className="kds-card-guests-count">
+                            <Users size={13} /> {order.guests} Guests
+                          </span>
+                        </div>
+                        <div className="kds-card-customer-row" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 700, color: '#3b1e10', background: '#fdf7f2', padding: '5px 10px', borderRadius: '8px', border: '1px solid #fae8dc', margin: '4px 0 8px' }}>
+                          <User size={13} style={{ color: '#ea580c', flexShrink: 0 }} />
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.customer_name || 'Guest'}</span>
+                        </div>
+                        {cr && (
+                          <div style={{ background: '#fee2e2', border: '1.5px solid #ef4444', borderRadius: 10, padding: '8px 10px', margin: '6px 0 8px', color: '#991b1b', fontSize: 12 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800 }}>
+                              <AlertTriangle size={14} style={{ color: '#dc2626' }} />
+                              <span>Cancel Requested by Customer</span>
+                            </div>
+                            <div style={{ marginTop: 2, fontSize: 11, color: '#7f1d1d' }}>"{cr.reason}"</div>
+                            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                              <button
+                                type="button"
+                                style={{ flex: 1, padding: '6px 8px', borderRadius: 6, background: '#dc2626', color: '#fff', border: 'none', fontWeight: 800, fontSize: 11, cursor: 'pointer' }}
+                                onClick={() => handleApproveCancel(order.id, cr.id, order.table_label, order.order_number)}
+                              >
+                                ✓ Approve Cancel
+                              </button>
+                              <button
+                                type="button"
+                                style={{ padding: '6px 8px', borderRadius: 6, background: '#ffffff', color: '#4b5563', border: '1px solid #d1d5db', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
+                                onClick={() => handleRejectCancel(cr.id, order.order_number)}
+                              >
+                                ✕ Decline
+                              </button>
+                            </div>
                           </div>
-                        ))}
-                      </div>
-                      <div className="kds-card-timer-row">
-                        <span className="kds-timer-pill prep-timer">
-                          <Clock3 size={13} /> {order.timer || '08:00'}
-                        </span>
-                      </div>
-                      <div className="kds-card-actions">
-                        <button
-                          type="button"
-                          className="kds-btn-update"
-                          onClick={() => handleUpdateOrder(order)}
-                        >
-                          <Pencil size={13} /> Update
-                        </button>
-                        <button
-                          type="button"
-                          className="kds-btn-mark-ready"
-                          disabled={busyId === order.id}
-                          onClick={() => handleMarkReady(order)}
-                        >
-                          <Check size={15} /> Mark Ready
-                        </button>
-                      </div>
-                    </article>
-                  );})}
+                        )}
+                        <div className="kds-card-items-box">
+                          {order.items.map((it: any) => (
+                            <div className="kds-card-item-row" key={it.id}>
+                              <span className="kds-card-item-name">• {it.name}</span>
+                              <span className="kds-card-item-qty">x{it.quantity}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="kds-card-timer-row">
+                          <span className="kds-timer-pill prep-timer">
+                            <Clock3 size={13} /> {order.timer || '08:00'}
+                          </span>
+                        </div>
+                        <div className="kds-card-actions">
+                          <button
+                            type="button"
+                            className="kds-btn-update"
+                            onClick={() => handleUpdateOrder(order)}
+                          >
+                            <Pencil size={13} /> Update
+                          </button>
+                          <button
+                            type="button"
+                            className="kds-btn-mark-ready"
+                            disabled={busyId === order.id}
+                            onClick={() => handleMarkReady(order)}
+                          >
+                            <Check size={15} /> Mark Ready
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
                   {prepOrders.length === 0 && (
                     <div style={{ textAlign: 'center', padding: '40px 16px', color: '#a07d6a', fontSize: 13 }}>
                       <ChefHat size={32} style={{ margin: '0 auto 8px', color: '#ea580c' }} />
@@ -3131,71 +3133,72 @@ function Kitchen({
                   {readyOrders.map(order => {
                     const cr = cancelRequests.find(c => c.orderId === order.id || String(c.orderNumber) === String(order.order_number));
                     return (
-                    <article className={`kds-order-card ready-card ${cr ? 'has-cancel-request' : ''}`} key={order.id}>
-                      <div className="kds-card-top-row">
-                        <span className="kds-card-order-id">#SVR{order.order_number}</span>
-                        <span className="kds-card-table-badge">
-                          <Monitor size={12} /> {order.table_label}
-                        </span>
-                      </div>
-                      <div className="kds-card-sub-row">
-                        <span>{order.time}</span>
-                        <span className="kds-card-guests-count">
-                          <Users size={13} /> {order.guests} Guests
-                        </span>
-                      </div>
-                      <div className="kds-card-customer-row" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 700, color: '#3b1e10', background: '#fdf7f2', padding: '5px 10px', borderRadius: '8px', border: '1px solid #fae8dc', margin: '4px 0 8px' }}>
-                        <User size={13} style={{ color: '#ea580c', flexShrink: 0 }} />
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.customer_name || 'Guest'}</span>
-                      </div>
-                      {cr && (
-                        <div style={{ background: '#fee2e2', border: '1.5px solid #ef4444', borderRadius: 10, padding: '8px 10px', margin: '6px 0 8px', color: '#991b1b', fontSize: 12 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800 }}>
-                            <AlertTriangle size={14} style={{ color: '#dc2626' }} />
-                            <span>Cancel Requested by Customer</span>
-                          </div>
-                          <div style={{ marginTop: 2, fontSize: 11, color: '#7f1d1d' }}>"{cr.reason}"</div>
-                          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                            <button
-                              type="button"
-                              style={{ flex: 1, padding: '6px 8px', borderRadius: 6, background: '#dc2626', color: '#fff', border: 'none', fontWeight: 800, fontSize: 11, cursor: 'pointer' }}
-                              onClick={() => handleApproveCancel(order.id, cr.id, order.table_label, order.order_number)}
-                            >
-                              ✓ Approve Cancel
-                            </button>
-                            <button
-                              type="button"
-                              style={{ padding: '6px 8px', borderRadius: 6, background: '#ffffff', color: '#4b5563', border: '1px solid #d1d5db', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
-                              onClick={() => handleRejectCancel(cr.id, order.order_number)}
-                            >
-                              ✕ Decline
-                            </button>
-                          </div>
+                      <article className={`kds-order-card ready-card ${cr ? 'has-cancel-request' : ''}`} key={order.id}>
+                        <div className="kds-card-top-row">
+                          <span className="kds-card-order-id">#SVR{order.order_number}</span>
+                          <span className="kds-card-table-badge">
+                            <Monitor size={12} /> {order.table_label}
+                          </span>
                         </div>
-                      )}
-                      <div className="kds-card-items-box">
-                        {order.items.map((it: any) => (
-                          <div className="kds-card-item-row" key={it.id}>
-                            <span className="kds-card-item-name">• {it.name}</span>
-                            <span className="kds-card-item-qty">x{it.quantity}</span>
+                        <div className="kds-card-sub-row">
+                          <span>{order.time}</span>
+                          <span className="kds-card-guests-count">
+                            <Users size={13} /> {order.guests} Guests
+                          </span>
+                        </div>
+                        <div className="kds-card-customer-row" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 700, color: '#3b1e10', background: '#fdf7f2', padding: '5px 10px', borderRadius: '8px', border: '1px solid #fae8dc', margin: '4px 0 8px' }}>
+                          <User size={13} style={{ color: '#ea580c', flexShrink: 0 }} />
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.customer_name || 'Guest'}</span>
+                        </div>
+                        {cr && (
+                          <div style={{ background: '#fee2e2', border: '1.5px solid #ef4444', borderRadius: 10, padding: '8px 10px', margin: '6px 0 8px', color: '#991b1b', fontSize: 12 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800 }}>
+                              <AlertTriangle size={14} style={{ color: '#dc2626' }} />
+                              <span>Cancel Requested by Customer</span>
+                            </div>
+                            <div style={{ marginTop: 2, fontSize: 11, color: '#7f1d1d' }}>"{cr.reason}"</div>
+                            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                              <button
+                                type="button"
+                                style={{ flex: 1, padding: '6px 8px', borderRadius: 6, background: '#dc2626', color: '#fff', border: 'none', fontWeight: 800, fontSize: 11, cursor: 'pointer' }}
+                                onClick={() => handleApproveCancel(order.id, cr.id, order.table_label, order.order_number)}
+                              >
+                                ✓ Approve Cancel
+                              </button>
+                              <button
+                                type="button"
+                                style={{ padding: '6px 8px', borderRadius: 6, background: '#ffffff', color: '#4b5563', border: '1px solid #d1d5db', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
+                                onClick={() => handleRejectCancel(cr.id, order.order_number)}
+                              >
+                                ✕ Decline
+                              </button>
+                            </div>
                           </div>
-                        ))}
-                      </div>
-                      <div className="kds-card-timer-row">
-                        <span className="kds-timer-pill ready-timer">
-                          <Check size={13} /> {order.timer || '12:00'}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        className="kds-btn-mark-served"
-                        disabled={busyId === order.id}
-                        onClick={() => handleMarkServed(order)}
-                      >
-                        <Bell size={15} /> Mark as Served
-                      </button>
-                    </article>
-                  );})}
+                        )}
+                        <div className="kds-card-items-box">
+                          {order.items.map((it: any) => (
+                            <div className="kds-card-item-row" key={it.id}>
+                              <span className="kds-card-item-name">• {it.name}</span>
+                              <span className="kds-card-item-qty">x{it.quantity}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="kds-card-timer-row">
+                          <span className="kds-timer-pill ready-timer">
+                            <Check size={13} /> {order.timer || '12:00'}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="kds-btn-mark-served"
+                          disabled={busyId === order.id}
+                          onClick={() => handleMarkServed(order)}
+                        >
+                          <Bell size={15} /> Mark as Served
+                        </button>
+                      </article>
+                    );
+                  })}
                   {readyOrders.length === 0 && (
                     <div style={{ textAlign: 'center', padding: '40px 16px', color: '#a07d6a', fontSize: 13 }}>
                       <CheckCircle2 size={32} style={{ margin: '0 auto 8px', color: '#16a34a' }} />
@@ -4028,7 +4031,7 @@ function Kitchen({
           </div>
         </div>
       )}
-      
+
     </div>
   );
 }
@@ -5720,7 +5723,7 @@ function CustomQrScanner({
           </div>
         </div>
       </div>
-      
+
     </div>
   );
 }
@@ -6331,7 +6334,7 @@ function CustomerPage({
           <span style={{ display: 'inline-flex', alignItems: 'center' }}>{icon as ReactNode}</span> {label as string}
         </button>
       ))}
-      
+
     </div>
   );
 
@@ -6514,94 +6517,134 @@ function CustomerPage({
               <span className="flourish-swirl">~ ❖ ~</span>
             </div>
 
-            {/* Stepper Bar: 1 (Done) -> 2 (Done) -> 3 (Active) */}
-            <div className="checkin-stepper-bar">
-              <div className="stepper-node completed">
-                <span className="step-circle checked"><Check size={14} /></span>
-                <span className="step-label">Your Details</span>
-              </div>
-              <div className="stepper-line completed" />
-              <div className="stepper-node completed">
-                <span className="step-circle checked"><Check size={14} /></span>
-                <span className="step-label">Menu &amp; Order</span>
-              </div>
-              <div className="stepper-line completed" />
-              <div className="stepper-node active">
-                <span className="step-circle filled">3</span>
-                <span className="step-label">Dine &amp; Enjoy</span>
-              </div>
-            </div>
-
-            {/* Steaming Golden Cloche Graphic */}
-            <div className="steaming-cloche-hero">
-              <div className="cloche-steam-container">
-                <span className="steam-line s1" />
-                <span className="steam-line s2" />
-                <span className="steam-line s3" />
-              </div>
-              <div className="golden-cloche-graphic">
-                <div className="cloche-knob" />
-                <div className="cloche-dome" />
-                <div className="cloche-rim" />
-              </div>
-            </div>
-
-            {/* Title & Subtitles */}
-            <h2 className="dine-enjoy-title">Dine &amp; Enjoy!</h2>
-            <p className="dine-enjoy-sub-main">Your order has been placed successfully.</p>
-            <p className="dine-enjoy-sub-note">Sit back, relax and enjoy your dining experience at Servora.</p>
-
-            {/* Order Summary Strip (3 Columns) */}
-            <div className="order-summary-3col-bar">
-              <div className="summary-col">
-                <span className="summary-col-icon"><CreditCard size={18} /></span>
-                <div className="summary-col-text">
-                  <small>Order ID</small>
-                  <b>#{order.order_number}</b>
-                </div>
-              </div>
-              <div className="summary-col-divider" />
-              <div className="summary-col">
-                <span className="summary-col-icon"><Monitor size={18} /></span>
-                <div className="summary-col-text">
-                  <small>Table</small>
-                  <b>{tableDisplay}</b>
-                </div>
-              </div>
-              <div className="summary-col-divider" />
-              <div className="summary-col">
-                <span className="summary-col-icon"><User size={18} /></span>
-                <div className="summary-col-text">
-                  <small>Guests</small>
-                  <b>{guestCount}</b>
-                </div>
-              </div>
-            </div>
-
-            {/* Live Progress Tracker (4 Milestones) — driven by the real order status */}
             {(() => {
-              const st = (liveOrder?.status || order.status || 'received') as string;
-              if (st === 'cancelled') {
+              const st = ((liveOrder?.status || order.status || 'received') as string).toLowerCase();
+              const isCancelled = st === 'cancelled';
+
+              if (isCancelled) {
                 return (
-                  <div style={{
-                    margin: '18px 0',
-                    background: '#fef2f2',
-                    border: '1.5px solid #fecaca',
-                    borderRadius: 16,
-                    padding: '20px 22px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 14,
-                    boxShadow: '0 4px 14px rgba(220, 38, 38, 0.08)'
-                  }}>
-                    <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#fee2e2', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <XCircle size={26} />
+                  <div className="order-cancelled-view" style={{ textAlign: 'center', padding: '10px 0 6px' }}>
+                    <div style={{
+                      width: 72,
+                      height: 72,
+                      borderRadius: '50%',
+                      background: '#fef2f2',
+                      color: '#dc2626',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginBottom: 16,
+                      border: '2px solid #fecaca',
+                      boxShadow: '0 8px 24px rgba(220, 38, 38, 0.12)'
+                    }}>
+                      <XCircle size={40} />
                     </div>
-                    <div>
-                      <b style={{ color: '#991b1b', fontSize: 16, display: 'block' }}>Order #{order.order_number} Cancelled</b>
-                      <span style={{ color: '#b91c1c', fontSize: 13, display: 'block', marginTop: 2 }}>
-                        This order has been officially cancelled with Kitchen &amp; Billing Counter approval.
-                      </span>
+
+                    <h2 style={{ fontSize: 24, fontWeight: 900, color: '#991b1b', margin: '0 0 6px' }}>
+                      Order #{order.order_number} Cancelled
+                    </h2>
+                    <p style={{ fontSize: 14, color: '#7f1d1d', margin: '0 0 16px', fontWeight: 600 }}>
+                      This order has been officially cancelled with Kitchen &amp; Billing Counter approval.
+                    </p>
+
+                    <div style={{
+                      background: '#fffaf5',
+                      border: '1.5px solid #fed7aa',
+                      borderRadius: 16,
+                      padding: '16px 20px',
+                      textAlign: 'left',
+                      marginBottom: 20
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, borderBottom: '1px solid #ffedd5', paddingBottom: 8 }}>
+                        <span style={{ fontSize: 13, color: '#8a6452', fontWeight: 700 }}>Table: <b>{tableDisplay}</b></span>
+                        <span style={{ fontSize: 11, background: '#fee2e2', color: '#dc2626', padding: '3px 8px', borderRadius: 6, fontWeight: 800 }}>
+                          CANCELLED &amp; VOIDED
+                        </span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: 13, color: '#9a3412', lineHeight: 1.5 }}>
+                        Your cancellation request was approved by the Kitchen &amp; Billing Counter. No charges or bills have been recorded for Table {tableDisplay}.
+                      </p>
+                    </div>
+
+                    {(liveOrder?.order_items || []).length > 0 && (
+                      <div style={{ marginBottom: 22, textAlign: 'left', background: '#fafaf9', border: '1px solid #e7e5e4', borderRadius: 14, padding: '14px 16px' }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: '#78716c', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: 8 }}>
+                          Cancelled Items:
+                        </span>
+                        {(liveOrder.order_items as any[]).map((it: any) => (
+                          <div key={it.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#a8a29e', textDecoration: 'line-through', padding: '4px 0' }}>
+                            <span>{it.quantity} × {it.item_name}</span>
+                            <span>₹{(Number(it.line_total) || (Number(it.unit_price || 0) * Number(it.quantity || 1))).toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try {
+                            localStorage.removeItem('servora_active_order_id');
+                            localStorage.removeItem('servora_active_order_token');
+                            localStorage.removeItem('servora_active_order_num');
+                          } catch { }
+                          setOrder(null);
+                          setLiveOrder(null);
+                          setCart([]);
+                          setCancellationRequested(false);
+                          setCancellationRejected(false);
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '14px 20px',
+                          borderRadius: 14,
+                          background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
+                          color: '#ffffff',
+                          border: 'none',
+                          fontSize: 15,
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 8,
+                          boxShadow: '0 4px 16px rgba(234, 88, 12, 0.35)'
+                        }}
+                      >
+                        <Utensils size={18} />
+                        <span>Browse Menu &amp; Place New Order</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try {
+                            localStorage.removeItem('servora_active_order_id');
+                            localStorage.removeItem('servora_active_order_token');
+                            localStorage.removeItem('servora_active_order_num');
+                          } catch { }
+                          setOrder(null);
+                          setLiveOrder(null);
+                          setCustomerReady(false);
+                          setCancellationRequested(false);
+                          setCancellationRejected(false);
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '12px 18px',
+                          borderRadius: 12,
+                          background: '#ffffff',
+                          color: '#57534e',
+                          border: '1.5px solid #ebdcd0',
+                          fontSize: 14,
+                          fontWeight: 700,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <ArrowLeft size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />
+                        Back to Table Details
+                      </button>
                     </div>
                   </div>
                 );
@@ -6620,8 +6663,74 @@ function CustomerPage({
                 { t: 'Ready', sub: stage >= 2 ? 'Dishes plated' : 'For service', icon: <Bell size={16} /> },
                 { t: 'Served', sub: 'Enjoy your meal', icon: <Utensils size={16} /> }
               ];
+
               return (
                 <>
+                  {/* Stepper Bar: 1 (Done) -> 2 (Done) -> 3 (Active) */}
+                  <div className="checkin-stepper-bar">
+                    <div className="stepper-node completed">
+                      <span className="step-circle checked"><Check size={14} /></span>
+                      <span className="step-label">Your Details</span>
+                    </div>
+                    <div className="stepper-line completed" />
+                    <div className="stepper-node completed">
+                      <span className="step-circle checked"><Check size={14} /></span>
+                      <span className="step-label">Menu &amp; Order</span>
+                    </div>
+                    <div className="stepper-line completed" />
+                    <div className="stepper-node active">
+                      <span className="step-circle filled">3</span>
+                      <span className="step-label">Dine &amp; Enjoy</span>
+                    </div>
+                  </div>
+
+                  {/* Steaming Golden Cloche Graphic */}
+                  <div className="steaming-cloche-hero">
+                    <div className="cloche-steam-container">
+                      <span className="steam-line s1" />
+                      <span className="steam-line s2" />
+                      <span className="steam-line s3" />
+                    </div>
+                    <div className="golden-cloche-graphic">
+                      <div className="cloche-knob" />
+                      <div className="cloche-dome" />
+                      <div className="cloche-rim" />
+                    </div>
+                  </div>
+
+                  {/* Title & Subtitles */}
+                  <h2 className="dine-enjoy-title">Dine &amp; Enjoy!</h2>
+                  <p className="dine-enjoy-sub-main">Your order has been placed successfully.</p>
+                  <p className="dine-enjoy-sub-note">Sit back, relax and enjoy your dining experience at Servora.</p>
+
+                  {/* Order Summary Strip (3 Columns) */}
+                  <div className="order-summary-3col-bar">
+                    <div className="summary-col">
+                      <span className="summary-col-icon"><CreditCard size={18} /></span>
+                      <div className="summary-col-text">
+                        <small>Order ID</small>
+                        <b>#{order.order_number}</b>
+                      </div>
+                    </div>
+                    <div className="summary-col-divider" />
+                    <div className="summary-col">
+                      <span className="summary-col-icon"><Monitor size={18} /></span>
+                      <div className="summary-col-text">
+                        <small>Table</small>
+                        <b>{tableDisplay}</b>
+                      </div>
+                    </div>
+                    <div className="summary-col-divider" />
+                    <div className="summary-col">
+                      <span className="summary-col-icon"><User size={18} /></span>
+                      <div className="summary-col-text">
+                        <small>Guests</small>
+                        <b>{guestCount}</b>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Live Progress Tracker (4 Milestones) */}
                   <div className="dine-live-timeline">
                     {steps.map((m, i) => {
                       const isDone = i < stage || (stage === 0 && i === 0);
@@ -6641,6 +6750,7 @@ function CustomerPage({
                       );
                     })}
                   </div>
+
                   {(liveOrder?.order_items || []).length > 0 && (
                     <div className="dine-item-list">
                       {(liveOrder.order_items as any[]).map(it => (
@@ -6722,205 +6832,190 @@ function CustomerPage({
                       <span>Request Order Cancellation (Kitchen / Billing Approval)</span>
                     </button>
                   ) : null}
+
+                  {helpBar}
+
+                  {/* Pay Bill Option in Customer View when Order is Served */}
+                  {(() => {
+                    const liveItems = (liveOrder?.order_items || []) as any[];
+                    const itemsSubtotal = liveItems.reduce((acc: number, it: any) => acc + (Number(it.line_total) || (Number(it.unit_price) || 0) * (it.quantity || 1)), 0);
+                    const orderSubtotal = Number(liveOrder?.subtotal) > 0 ? Number(liveOrder.subtotal) : itemsSubtotal;
+                    const orderTax = Number(liveOrder?.tax) > 0 ? Number(liveOrder.tax) : Math.round(orderSubtotal * 0.05);
+                    const orderTotal = Number(liveOrder?.total) > 0 ? Number(liveOrder.total) : Number(liveOrder?.total_amount) > 0 ? Number(liveOrder.total_amount) : (orderSubtotal + orderTax);
+                    const isOrderPaid = (liveOrder?.payment_status === 'paid' || order?.payment_status === 'paid');
+                    const isServed = ['served', 'completed'].includes(st);
+
+                    if (!isServed) return null;
+
+                    if (isOrderPaid) {
+                      return (
+                        <div style={{ marginTop: 14, background: '#dcfce7', border: '1.5px solid #86efac', borderRadius: 16, padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, color: '#15803d', fontWeight: 800 }}>
+                          <CheckCircle2 size={22} />
+                          <div>
+                            <div style={{ fontSize: 15 }}>Bill Paid &amp; Settled (₹{orderTotal.toFixed(2)})</div>
+                            <small style={{ fontWeight: 600, color: '#166534', display: 'block', marginTop: 2 }}>Thank you for dining with us at Servora!</small>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    const servedKey = `servora_served_time_${liveOrder?.id || order?.id}`;
+                    let localServedTime = Number(localStorage.getItem(servedKey) || 0);
+                    if (!localServedTime && isServed) {
+                      const rawTime = liveOrder?.served_at || liveOrder?.updated_at;
+                      localServedTime = rawTime ? new Date(rawTime).getTime() : Date.now();
+                      try { localStorage.setItem(servedKey, String(localServedTime)); } catch { }
+                    }
+                    const elapsedSec = isServed && localServedTime > 0 ? Math.floor((Date.now() - localServedTime) / 1000) : 0;
+                    const remainingSec = Math.max(0, 600 - elapsedSec);
+                    const mm = String(Math.floor(remainingSec / 60)).padStart(2, '0');
+                    const ss = String(remainingSec % 60).padStart(2, '0');
+                    const isTimerActive = isServed && remainingSec > 0;
+
+                    return (
+                      <div style={{ marginTop: 14, background: '#fffaf5', border: '1.5px solid #fbd9c4', borderRadius: 16, padding: 18, boxShadow: '0 4px 15px rgba(234, 88, 12, 0.08)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                          <div>
+                            <span style={{ fontSize: 11, color: '#8a6452', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Food Served &amp; Enjoyed</span>
+                            <h4 style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 800, color: '#3b1e10' }}>Ready for Bill Payment</h4>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <span style={{ fontSize: 11, color: '#8a6452', display: 'block' }}>Total Bill (incl. GST)</span>
+                            <b style={{ fontSize: 22, color: '#ea580c', fontWeight: 900 }}>₹{orderTotal.toFixed(2)}</b>
+                          </div>
+                        </div>
+
+                        {isTimerActive ? (
+                          <>
+                            <button
+                              type="button"
+                              disabled={true}
+                              style={{
+                                width: '100%',
+                                padding: '14px 18px',
+                                fontSize: 15,
+                                fontWeight: 800,
+                                borderRadius: 12,
+                                background: '#f3e5d8',
+                                color: '#8c6e58',
+                                border: '1.5px solid #ebdcd0',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 10,
+                                cursor: 'not-allowed'
+                              }}
+                            >
+                              <Clock size={18} /> Pay Bill (Available in {mm}:{ss})
+                            </button>
+                            <div style={{ textAlign: 'center', marginTop: 8, fontSize: 11, color: '#8a6452' }}>
+                              Pay button activates in {mm}:{ss} (10 mins after served) so you can enjoy your dining uninterrupted.
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setShowPayModal(true)}
+                              style={{
+                                width: '100%',
+                                padding: '14px 18px',
+                                fontSize: 15,
+                                fontWeight: 800,
+                                borderRadius: 12,
+                                background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
+                                color: '#ffffff',
+                                border: 'none',
+                                boxShadow: '0 4px 14px rgba(234, 88, 12, 0.35)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 10,
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <Wallet size={18} /> Pay Bill (₹{orderTotal.toFixed(2)}) →
+                            </button>
+                            <div style={{ textAlign: 'center', marginTop: 8, fontSize: 11, color: '#8a6452' }}>
+                              Pay via UPI / QR, Card, or choose Cash at Counter.
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Direct Tracker & Past Visits Dashboard Link */}
+                  <div style={{ marginTop: 14, marginBottom: 4 }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        try {
+                          const phoneClean = (phone || localStorage.getItem('servora_order_phone') || localStorage.getItem('servora_customer_phone') || '').replace(/\D/g, '').slice(-10);
+                          const custName = (name || localStorage.getItem('servora_customer_name') || order?.customer_name || 'Valued Diner').trim();
+                          if (phoneClean) {
+                            localStorage.setItem('servora_customer_phone', phoneClean);
+                            localStorage.setItem('servora_order_phone', phoneClean);
+                          }
+                          if (custName) localStorage.setItem('servora_customer_name', custName);
+                          if (order?.id) localStorage.setItem('servora_active_order_id', order.id);
+                          if (order?.order_number) localStorage.setItem('servora_active_order_num', String(order.order_number));
+                          if (order?.table_label) localStorage.setItem('servora_active_order_table', order.table_label);
+                          localStorage.removeItem('servora_customer_session');
+                        } catch { }
+                        nav('/customer-login');
+                      }}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        padding: '12px 18px',
+                        background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: 12,
+                        fontWeight: 700,
+                        fontSize: 14,
+                        cursor: 'pointer',
+                        boxShadow: '0 4px 14px rgba(234, 88, 12, 0.35)',
+                        transition: 'transform 0.15s ease'
+                      }}
+                    >
+                      <Activity size={17} />
+                      <span>Open Full Live Tracking Dashboard &amp; Bills →</span>
+                    </button>
+                  </div>
+
+                  {/* Action Buttons: Order More & Back to Home */}
+                  <div className="dine-actions-row">
+                    <button
+                      type="button"
+                      className="btn-order-more"
+                      onClick={() => {
+                        setOrder(null);
+                        setCart([]);
+                        setCancellationRequested(false);
+                      }}
+                    >
+                      <MenuIcon size={16} /> Order More
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-back-home"
+                      onClick={() => {
+                        setOrder(null);
+                        setCustomerReady(false);
+                        setCancellationRequested(false);
+                      }}
+                    >
+                      <ArrowLeft size={16} /> Back to Table Dining
+                    </button>
+                  </div>
                 </>
               );
             })()}
-
-            {helpBar}
-
-            {/* Pay Bill Option in Customer View when Order is Served */}
-            {(() => {
-              const liveItems = (liveOrder?.order_items || []) as any[];
-              const itemsSubtotal = liveItems.reduce((acc: number, it: any) => acc + (Number(it.line_total) || (Number(it.unit_price) || 0) * (it.quantity || 1)), 0);
-              const orderSubtotal = Number(liveOrder?.subtotal) > 0 ? Number(liveOrder.subtotal) : itemsSubtotal;
-              const orderTax = Number(liveOrder?.tax) > 0 ? Number(liveOrder.tax) : Math.round(orderSubtotal * 0.05);
-              const orderTotal = Number(liveOrder?.total) > 0 ? Number(liveOrder.total) : Number(liveOrder?.total_amount) > 0 ? Number(liveOrder.total_amount) : (orderSubtotal + orderTax);
-              const isOrderPaid = (liveOrder?.payment_status === 'paid' || order?.payment_status === 'paid');
-              const isServed = ['served', 'completed'].includes(((liveOrder?.status || order?.status || '') as string).toLowerCase());
-
-              if (!isServed) return null;
-
-              if (isOrderPaid) {
-                return (
-                  <div style={{ marginTop: 14, background: '#dcfce7', border: '1.5px solid #86efac', borderRadius: 16, padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, color: '#15803d', fontWeight: 800 }}>
-                    <CheckCircle2 size={22} />
-                    <div>
-                      <div style={{ fontSize: 15 }}>Bill Paid &amp; Settled (₹{orderTotal.toFixed(2)})</div>
-                      <small style={{ fontWeight: 600, color: '#166534', display: 'block', marginTop: 2 }}>Thank you for dining with us at Servora!</small>
-                    </div>
-                  </div>
-                );
-              }
-
-              const servedKey = `servora_served_time_${liveOrder?.id || order?.id}`;
-              let localServedTime = Number(localStorage.getItem(servedKey) || 0);
-              if (!localServedTime && isServed) {
-                const rawTime = liveOrder?.served_at || liveOrder?.updated_at;
-                localServedTime = rawTime ? new Date(rawTime).getTime() : Date.now();
-                try { localStorage.setItem(servedKey, String(localServedTime)); } catch { }
-              }
-              const elapsedSec = isServed && localServedTime > 0 ? Math.floor((Date.now() - localServedTime) / 1000) : 0;
-              const remainingSec = Math.max(0, 600 - elapsedSec);
-              const mm = String(Math.floor(remainingSec / 60)).padStart(2, '0');
-              const ss = String(remainingSec % 60).padStart(2, '0');
-              const isTimerActive = isServed && remainingSec > 0;
-
-              return (
-                <div style={{ marginTop: 14, background: '#fffaf5', border: '1.5px solid #fbd9c4', borderRadius: 16, padding: 18, boxShadow: '0 4px 15px rgba(234, 88, 12, 0.08)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                    <div>
-                      <span style={{ fontSize: 11, color: '#8a6452', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Food Served &amp; Enjoyed</span>
-                      <h4 style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 800, color: '#3b1e10' }}>Ready for Bill Payment</h4>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <span style={{ fontSize: 11, color: '#8a6452', display: 'block' }}>Total Bill (incl. GST)</span>
-                      <b style={{ fontSize: 22, color: '#ea580c', fontWeight: 900 }}>₹{orderTotal.toFixed(2)}</b>
-                    </div>
-                  </div>
-
-                  {isTimerActive ? (
-                    <>
-                      <button
-                        type="button"
-                        disabled={true}
-                        style={{
-                          width: '100%',
-                          padding: '14px 18px',
-                          fontSize: 15,
-                          fontWeight: 800,
-                          borderRadius: 12,
-                          background: '#f3e5d8',
-                          color: '#8c6e58',
-                          border: '1.5px solid #ebdcd0',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 10,
-                          cursor: 'not-allowed'
-                        }}
-                      >
-                        <Clock size={18} /> Pay Bill (Available in {mm}:{ss})
-                      </button>
-                      <div style={{ textAlign: 'center', marginTop: 8, fontSize: 11, color: '#8a6452' }}>
-                        Pay button activates in {mm}:{ss} (10 mins after served) so you can enjoy your dining uninterrupted.
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setShowPayModal(true)}
-                        style={{
-                          width: '100%',
-                          padding: '14px 18px',
-                          fontSize: 15,
-                          fontWeight: 800,
-                          borderRadius: 12,
-                          background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
-                          color: '#ffffff',
-                          border: 'none',
-                          boxShadow: '0 4px 14px rgba(234, 88, 12, 0.35)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 10,
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <Wallet size={18} /> Pay Bill (₹{orderTotal.toFixed(2)}) →
-                      </button>
-                      <div style={{ textAlign: 'center', marginTop: 8, fontSize: 11, color: '#8a6452' }}>
-                        Pay via UPI / QR, Card, or choose Cash at Counter.
-                      </div>
-                    </>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* Direct Tracker & Past Visits Dashboard Link — Enforces OTP Verification */}
-            <div style={{ marginTop: 14, marginBottom: 4 }}>
-              <button
-                type="button"
-                onClick={() => {
-                  try {
-                    const phoneClean = (phone || localStorage.getItem('servora_order_phone') || localStorage.getItem('servora_customer_phone') || '').replace(/\D/g, '').slice(-10);
-                    const custName = (name || localStorage.getItem('servora_customer_name') || order?.customer_name || 'Valued Diner').trim();
-                    if (phoneClean) {
-                      localStorage.setItem('servora_customer_phone', phoneClean);
-                      localStorage.setItem('servora_order_phone', phoneClean);
-                    }
-                    if (custName) localStorage.setItem('servora_customer_name', custName);
-                    if (order?.id) localStorage.setItem('servora_active_order_id', order.id);
-                    if (order?.order_number) localStorage.setItem('servora_active_order_num', String(order.order_number));
-                    if (order?.table_label) localStorage.setItem('servora_active_order_table', order.table_label);
-                    // Clear existing session so OTP verification is strictly required
-                    localStorage.removeItem('servora_customer_session');
-                  } catch { }
-                  nav('/customer-login');
-                }}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 8,
-                  padding: '12px 18px',
-                  background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 12,
-                  fontWeight: 700,
-                  fontSize: 14,
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 14px rgba(234, 88, 12, 0.35)',
-                  transition: 'transform 0.15s ease'
-                }}
-              >
-                <Activity size={17} />
-                <span>Open Full Live Tracking Dashboard &amp; Bills →</span>
-              </button>
-            </div>
-
-            {/* Action Buttons: Order More & Back to Home */}
-            <div className="dine-actions-row">
-              <button
-                type="button"
-                className="btn-order-more"
-                onClick={() => {
-                  try {
-                    if (liveOrder?.status === 'cancelled') {
-                      localStorage.removeItem('servora_active_order_id');
-                      localStorage.removeItem('servora_active_order_token');
-                      localStorage.removeItem('servora_active_order_num');
-                    }
-                  } catch { }
-                  setOrder(null);
-                  setCart([]);
-                  setCancellationRequested(false);
-                }}
-              >
-                <MenuIcon size={16} /> {liveOrder?.status === 'cancelled' ? 'Order Fresh Dishes' : 'Order More'}
-              </button>
-              <button
-                type="button"
-                className="btn-back-home"
-                onClick={() => {
-                  try {
-                    if (liveOrder?.status === 'cancelled') {
-                      localStorage.removeItem('servora_active_order_id');
-                      localStorage.removeItem('servora_active_order_token');
-                      localStorage.removeItem('servora_active_order_num');
-                    }
-                  } catch { }
-                  setOrder(null);
-                  setCustomerReady(false);
-                  setCancellationRequested(false);
-                }}
-              >
-                <ArrowLeft size={16} /> Back to Table Dining
-              </button>
-            </div>
           </div>
         </div>
       ) : !customerReady ? (
@@ -8146,7 +8241,7 @@ function OrderTracking({ order, setNotice }: { order: any; setNotice: (n: Notice
           </div>
         ))}
       </div>
-      
+
     </div>
   );
 }
