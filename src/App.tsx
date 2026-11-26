@@ -6024,12 +6024,14 @@ function CustomerPage({
         const savedPhone = localStorage.getItem('servora_customer_phone');
         if (savedName) setName(savedName);
         if (savedPhone) setPhone(savedPhone);
+        const savedPaymentStatus = localStorage.getItem(`servora_order_paid_${savedOrderId}`);
         if (savedOrderId && savedToken) {
           setOrder({
             id: savedOrderId,
             order_number: savedNum ? Number(savedNum) : 1001,
             access_token: savedToken,
             status: 'received',
+            payment_status: savedPaymentStatus || 'pending',
             table_label: savedTable || '—',
             customer_name: savedName || 'Guest'
           });
@@ -6072,18 +6074,25 @@ function CustomerPage({
 
             const finalData = {
               ...data,
+              payment_status: data.payment_status || (localStorage.getItem(`servora_order_paid_${order.id}`) === 'paid' ? 'paid' : order.payment_status || 'pending'),
               subtotal: enrichedSubtotal,
               tax: enrichedTax,
               total: enrichedTotal,
               order_items: enrichedItems
             };
             setLiveOrder(finalData);
+            if (data.payment_status === 'paid') {
+              try { localStorage.setItem(`servora_order_paid_${order.id}`, 'paid'); } catch { }
+            }
             currentOrdStatus = data.status || '';
           }
         }
         if (!currentOrdStatus) {
           const { data: ord } = await supabase.from('orders').select('*, order_items(*)').eq('id', order.id).maybeSingle();
           if (alive && ord) {
+            if (ord.payment_status === 'paid') {
+              try { localStorage.setItem(`servora_order_paid_${order.id}`, 'paid'); } catch { }
+            }
             setLiveOrder(ord);
             currentOrdStatus = ord.status || '';
           }
@@ -6878,7 +6887,7 @@ function CustomerPage({
                     const orderSubtotal = Number(liveOrder?.subtotal) > 0 ? Number(liveOrder.subtotal) : itemsSubtotal;
                     const orderTax = Number(liveOrder?.tax) > 0 ? Number(liveOrder.tax) : Math.round(orderSubtotal * 0.05);
                     const orderTotal = Number(liveOrder?.total) > 0 ? Number(liveOrder.total) : Number(liveOrder?.total_amount) > 0 ? Number(liveOrder.total_amount) : (orderSubtotal + orderTax);
-                    const isOrderPaid = (liveOrder?.payment_status === 'paid' || order?.payment_status === 'paid');
+                    const isOrderPaid = (liveOrder?.payment_status === 'paid' || order?.payment_status === 'paid' || localStorage.getItem(`servora_order_paid_${liveOrder?.id || order?.id}`) === 'paid');
                     const isServed = ['served', 'completed'].includes(st);
 
                     if (!isServed) return null;
@@ -7554,7 +7563,7 @@ function CustomerPage({
               const orderSubtotal = Number(liveOrder?.subtotal) > 0 ? Number(liveOrder.subtotal) : itemsSubtotal;
               const orderTax = Number(liveOrder?.tax) > 0 ? Number(liveOrder.tax) : Math.round(orderSubtotal * 0.05);
               const orderTotal = Number(liveOrder?.total) > 0 ? Number(liveOrder.total) : Number(liveOrder?.total_amount) > 0 ? Number(liveOrder.total_amount) : (orderSubtotal + orderTax);
-              const isOrderPaid = (liveOrder?.payment_status === 'paid' || order?.payment_status === 'paid');
+              const isOrderPaid = (liveOrder?.payment_status === 'paid' || order?.payment_status === 'paid' || localStorage.getItem(`servora_order_paid_${liveOrder?.id || order?.id}`) === 'paid');
               const isServed = ['served', 'completed'].includes(((liveOrder?.status || order?.status || '') as string).toLowerCase());
 
               if (!isServed) return null;
@@ -8046,6 +8055,10 @@ function CustomerPage({
                           payment_status: 'paid',
                           status: 'completed'
                         }).eq('id', order.id);
+                        try {
+                          localStorage.setItem(`servora_order_paid_${order.id}`, 'paid');
+                        } catch { }
+                        setOrder((prev: any) => prev ? { ...prev, payment_status: 'paid', status: 'completed' } : prev);
                         setLiveOrder((prev: any) => ({ ...prev, payment_status: 'paid', status: 'completed' }));
                         notify(setNotice, `Payment of ₹${totVal.toFixed(2)} completed successfully! Thank you for dining with us.`, 'success');
                       }

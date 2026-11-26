@@ -1100,6 +1100,11 @@ export function CustomerDashboardPage({
                       const taxVal = Number(activeOrder.tax) > 0 ? Number(activeOrder.tax) : Number((subVal * 0.05).toFixed(2));
                       const totVal = Number(activeOrder.total) > 0 ? Number(activeOrder.total) : Number(activeOrder.total_amount) > 0 ? Number(activeOrder.total_amount) : Number((subVal + taxVal).toFixed(2));
 
+                      const isOrderPaid = activeOrder.payment_status === 'paid' || localStorage.getItem(`servora_order_paid_${activeOrder.id}`) === 'paid';
+                      if (isOrderPaid && activeOrder.payment_status !== 'paid') {
+                        activeOrder.payment_status = 'paid';
+                      }
+
                       return (
                         <>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px', flex: 1 }}>
@@ -1114,6 +1119,7 @@ export function CustomerDashboardPage({
                             <div
                               style={{
                                 display: 'flex',
+                                justifyItems: 'space-between',
                                 justifyContent: 'space-between',
                                 borderTop: '1.5px dashed #ebdcd0',
                                 paddingTop: '12px',
@@ -1132,18 +1138,18 @@ export function CustomerDashboardPage({
                                 marginTop: '12px',
                                 padding: '10px 14px',
                                 borderRadius: '12px',
-                                background: activeOrder.payment_status === 'paid' ? '#dcfce7' : '#fff7ed',
-                                color: activeOrder.payment_status === 'paid' ? '#16a34a' : '#ea580c',
+                                background: isOrderPaid ? '#dcfce7' : '#fff7ed',
+                                color: isOrderPaid ? '#16a34a' : '#ea580c',
                                 fontWeight: 800,
                                 textAlign: 'center',
                                 fontSize: '13px'
                               }}
                             >
-                              Payment Status: {activeOrder.payment_status === 'paid' ? 'PAID & SETTLED' : 'UNPAID • Pay Cash / Online'}
+                              Payment Status: {isOrderPaid ? 'PAID & SETTLED' : 'UNPAID • Pay Cash / Online'}
                             </div>
                           </div>
 
-                          {activeOrder.payment_status !== 'paid' ? (() => {
+                          {!isOrderPaid ? (() => {
                             const servedKey = `servora_served_time_${activeOrder.id}`;
                             let localServedTime = Number(localStorage.getItem(servedKey) || 0);
                             if (!localServedTime && currentStage === 3) {
@@ -2101,10 +2107,14 @@ Thank you for dining at Servora!
                           if (supabase && activeOrder?.id) {
                             await supabase
                               .from('orders')
-                              .update({ payment_status: 'paid' })
+                              .update({ payment_status: 'paid', status: 'completed' })
                               .eq('id', activeOrder.id);
                           }
-                          setActiveOrder((prev: any) => prev ? { ...prev, payment_status: 'paid' } : null);
+                          try {
+                            localStorage.setItem(`servora_order_paid_${activeOrder.id}`, 'paid');
+                          } catch { }
+                          setActiveOrder((prev: any) => prev ? { ...prev, payment_status: 'paid', status: 'completed' } : null);
+                          setPastOrders(prev => prev.map(o => o.id === activeOrder.id ? { ...o, payment_status: 'paid', status: 'completed' } : o));
                           if (setNotice) {
                             setNotice({
                               text: `Payment of ₹${totVal.toFixed(2)} completed successfully! Bill is settled.`,

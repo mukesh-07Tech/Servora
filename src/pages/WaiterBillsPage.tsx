@@ -197,6 +197,13 @@ export function WaiterBillsPage({
           })
           .in('id', orderIds);
 
+        // Store local paid status flag for active customer browser instances
+        try {
+          orderIds.forEach(oid => {
+            if (oid) localStorage.setItem(`servora_order_paid_${oid}`, 'paid');
+          });
+        } catch { }
+
         // Also sync order_items status for these orders to completed
         try {
           await supabase.from('order_items').update({ status: 'completed' }).in('order_id', orderIds);
