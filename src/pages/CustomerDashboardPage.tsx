@@ -123,11 +123,22 @@ export function CustomerDashboardPage({
 
       // 1. If we have a direct active order from recent dine-in session, load it first
       if (storedOrderId) {
-        let { data: sOrder } = await supabase
-          .from('orders')
-          .select('*, order_items(*)')
-          .eq('id', storedOrderId)
-          .maybeSingle();
+        let sOrder: any = null;
+
+        // Try public RPC first
+        try {
+          const { data } = await supabase.rpc('get_order_status_public', { p_order_id: storedOrderId });
+          if (data && data.id) sOrder = data;
+        } catch { }
+
+        if (!sOrder) {
+          const { data } = await supabase
+            .from('orders')
+            .select('*, order_items(*)')
+            .eq('id', storedOrderId)
+            .maybeSingle();
+          if (data) sOrder = data;
+        }
 
         if (!sOrder && !isNaN(Number(storedOrderId))) {
           const { data: numOrder } = await supabase
@@ -139,6 +150,9 @@ export function CustomerDashboardPage({
         }
 
         if (sOrder) {
+          if (localStorage.getItem(`servora_order_paid_${sOrder.id}`) === 'paid') {
+            sOrder.payment_status = 'paid';
+          }
           foundOrder = sOrder;
           orderList = [sOrder];
           setActiveOrder(sOrder);

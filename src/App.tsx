@@ -6052,50 +6052,69 @@ function CustomerPage({
       if (!supabase || !order?.id) return;
       try {
         let currentOrdStatus = '';
-        if (order.access_token) {
-          const { data } = await supabase.rpc('get_order_public', { p_order_id: order.id, p_access_token: order.access_token });
-          if (alive && data) {
-            // Enrich items with menu pricing if missing
-            const rawItems = (data.order_items || []) as any[];
-            const enrichedItems = rawItems.map((it: any) => {
-              const qty = it.quantity || 1;
-              let unit = Number(it.unit_price) || 0;
-              if (unit <= 0) {
-                const menuItem = menu.find((m: any) => m.id === it.menu_item_id || m.name?.trim().toLowerCase() === it.item_name?.trim().toLowerCase());
-                unit = menuItem?.price || 0;
-              }
-              const line = Number(it.line_total) > 0 ? Number(it.line_total) : (unit * qty);
-              return { ...it, unit_price: unit, line_total: line };
-            });
-            const itemsSum = enrichedItems.reduce((acc: number, it: any) => acc + (it.line_total || 0), 0);
-            const enrichedSubtotal = Number(data.subtotal) > 0 ? Number(data.subtotal) : (itemsSum > 0 ? itemsSum : (order.subtotal || 0));
-            const enrichedTax = Number(data.tax) > 0 ? Number(data.tax) : Number((enrichedSubtotal * 0.05).toFixed(2));
-            const enrichedTotal = Number(data.total) > 0 ? Number(data.total) : Number((enrichedSubtotal + enrichedTax).toFixed(2));
+        let fetchedData: any = null;
 
-            const finalData = {
-              ...data,
-              payment_status: data.payment_status || (localStorage.getItem(`servora_order_paid_${order.id}`) === 'paid' ? 'paid' : order.payment_status || 'pending'),
-              subtotal: enrichedSubtotal,
-              tax: enrichedTax,
-              total: enrichedTotal,
-              order_items: enrichedItems
-            };
-            setLiveOrder(finalData);
-            if (data.payment_status === 'paid') {
-              try { localStorage.setItem(`servora_order_paid_${order.id}`, 'paid'); } catch { }
-            }
-            currentOrdStatus = data.status || '';
-          }
+        // 1. Try public authenticated tracking RPC
+        if (order.access_token) {
+          try {
+            const { data } = await supabase.rpc('get_order_public', { p_order_id: order.id, p_access_token: order.access_token });
+            if (data && data.id) fetchedData = data;
+          } catch { }
         }
-        if (!currentOrdStatus) {
-          const { data: ord } = await supabase.from('orders').select('*, order_items(*)').eq('id', order.id).maybeSingle();
-          if (alive && ord) {
-            if (ord.payment_status === 'paid') {
-              try { localStorage.setItem(`servora_order_paid_${order.id}`, 'paid'); } catch { }
+
+        // 2. Try direct public status RPC (bypasses expired session tokens)
+        if (!fetchedData) {
+          try {
+            const { data } = await supabase.rpc('get_order_status_public', { p_order_id: order.id });
+            if (data && data.id) fetchedData = data;
+          } catch { }
+        }
+
+        // 3. Fallback to direct DB select
+        if (!fetchedData) {
+          try {
+            const { data: ord } = await supabase.from('orders').select('*, order_items(*)').eq('id', order.id).maybeSingle();
+            if (ord && ord.id) fetchedData = ord;
+          } catch { }
+        }
+
+        if (alive && fetchedData) {
+          // Enrich items with menu pricing if missing
+          const rawItems = (fetchedData.order_items || []) as any[];
+          const enrichedItems = rawItems.map((it: any) => {
+            const qty = it.quantity || 1;
+            let unit = Number(it.unit_price) || 0;
+            if (unit <= 0) {
+              const menuItem = menu.find((m: any) => m.id === it.menu_item_id || m.name?.trim().toLowerCase() === it.item_name?.trim().toLowerCase());
+              unit = menuItem?.price || 0;
             }
-            setLiveOrder(ord);
-            currentOrdStatus = ord.status || '';
+            const line = Number(it.line_total) > 0 ? Number(it.line_total) : (unit * qty);
+            return { ...it, unit_price: unit, line_total: line };
+          });
+          const itemsSum = enrichedItems.reduce((acc: number, it: any) => acc + (it.line_total || 0), 0);
+          const enrichedSubtotal = Number(fetchedData.subtotal) > 0 ? Number(fetchedData.subtotal) : (itemsSum > 0 ? itemsSum : (order.subtotal || 0));
+          const enrichedTax = Number(fetchedData.tax) > 0 ? Number(fetchedData.tax) : Number((enrichedSubtotal * 0.05).toFixed(2));
+          const enrichedTotal = Number(fetchedData.total) > 0 ? Number(fetchedData.total) : Number((enrichedSubtotal + enrichedTax).toFixed(2));
+
+          const isLocallyPaid = localStorage.getItem(`servora_order_paid_${order.id}`) === 'paid';
+          const isRemotelyPaid = fetchedData.payment_status === 'paid' || fetchedData.status === 'completed';
+          const resolvedPaymentStatus = isRemotelyPaid || isLocallyPaid ? 'paid' : (fetchedData.payment_status || order.payment_status || 'pending');
+
+          if (isRemotelyPaid && !isLocallyPaid) {
+            try { localStorage.setItem(`servora_order_paid_${order.id}`, 'paid'); } catch { }
           }
+
+          const finalData = {
+            ...fetchedData,
+            payment_status: resolvedPaymentStatus,
+            subtotal: enrichedSubtotal,
+            tax: enrichedTax,
+            total: enrichedTotal,
+            order_items: enrichedItems
+          };
+
+          setLiveOrder(finalData);
+          currentOrdStatus = fetchedData.status || '';
         }
 
         if (currentOrdStatus === 'cancelled') {
