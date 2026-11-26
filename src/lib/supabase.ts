@@ -1,7 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
-const url = import.meta.env.VITE_SUPABASE_URL;
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Production fallback credentials so deployment on Vercel works out-of-the-box without entering env variables
+const DEFAULT_SUPABASE_URL = 'https://zouslhgbyvbgadcarqar.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpvdXNsaGdieXZiZ2FkY2FycWFyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU2ODMxNTgsImV4cCI6MjExMTI1OTE1OH0.Y56YBNRDU08zKifBPvN62bu59Yxu0JwUCVXL6HZ-qQw';
+
+const url = import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY;
 export const supabaseConfigured = Boolean(url && anonKey && !url.includes('YOUR_PROJECT'));
 export const supabase = supabaseConfigured
   ? createClient(url, anonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
