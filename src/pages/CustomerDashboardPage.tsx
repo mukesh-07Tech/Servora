@@ -76,12 +76,16 @@ export function CustomerDashboardPage({
   const [activeOrder, setActiveOrder] = useState<any | null>(null);
   const [activeOrderItems, setActiveOrderItems] = useState<any[]>([]);
   const [activeOrdersList, setActiveOrdersList] = useState<any[]>([]);
-  const selectedOrderIdRef = useRef<string | null>(null);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(() => {
+    return localStorage.getItem('servora_selected_order_id') || localStorage.getItem('servora_active_order_id') || null;
+  });
+  const userSelectedOrderIdRef = useRef<string | null>(localStorage.getItem('servora_selected_order_id') || null);
+  const selectedOrderIdRef = useRef<string | null>(localStorage.getItem('servora_selected_order_id') || localStorage.getItem('servora_active_order_id') || null);
 
   // Sync ref whenever activeOrder changes
   useEffect(() => {
     if (activeOrder?.id) {
-      selectedOrderIdRef.current = activeOrder.id;
+      selectedOrderIdRef.current = String(activeOrder.id);
     }
   }, [activeOrder?.id]);
 
@@ -130,7 +134,8 @@ export function CustomerDashboardPage({
     }
 
     try {
-      const storedOrderId = localStorage.getItem('servora_active_order_id');
+      const userTargetId = userSelectedOrderIdRef.current || selectedOrderId || localStorage.getItem('servora_selected_order_id');
+      const storedOrderId = userTargetId || localStorage.getItem('servora_active_order_id');
       const storedNum = localStorage.getItem('servora_active_order_num');
       const storedTable = localStorage.getItem('servora_active_order_table');
       const phoneDigits = customerPhone.replace(/\D/g, '').slice(-10);
@@ -251,16 +256,41 @@ export function CustomerDashboardPage({
 
       // Select which active order to show in detail
       if (activeUnpaidOrders.length > 0) {
-        // Keep currently viewed order (via ref or state) if it's still in active list, else pick the first active unpaid
-        const targetId = selectedOrderIdRef.current || activeOrder?.id;
-        const stillActive = targetId ? activeUnpaidOrders.find(o => o.id === targetId) : null;
+        // Robust matching against user's clicked selection, current ref, or storage
+        const target = userTargetId || selectedOrderIdRef.current || (activeOrder?.id ? String(activeOrder.id) : null) || storedOrderId;
+        let stillActive: any = null;
+        if (target) {
+          const targetStr = String(target).toLowerCase();
+          stillActive = activeUnpaidOrders.find(o => 
+            (o.id && String(o.id).toLowerCase() === targetStr) ||
+            (o.order_number && (String(o.order_number) === targetStr || `svr${o.order_number}`.toLowerCase() === targetStr || `#svr${o.order_number}`.toLowerCase() === targetStr))
+          );
+        }
+
         foundOrder = stillActive || activeUnpaidOrders[0];
-        selectedOrderIdRef.current = foundOrder.id;
+
+        if (stillActive) {
+          const activeIdStr = String(stillActive.id);
+          userSelectedOrderIdRef.current = activeIdStr;
+          selectedOrderIdRef.current = activeIdStr;
+          setSelectedOrderId(activeIdStr);
+        } else {
+          // If user had a selection but it is no longer active (e.g. paid/cancelled), fallback to first active order
+          userSelectedOrderIdRef.current = null;
+          try { localStorage.removeItem('servora_selected_order_id'); } catch { }
+          const newIdStr = foundOrder ? String(foundOrder.id) : null;
+          selectedOrderIdRef.current = newIdStr;
+          setSelectedOrderId(newIdStr);
+        }
+
         setActiveOrder(foundOrder);
-        setActiveOrderItems(foundOrder.order_items || []);
+        setActiveOrderItems(foundOrder.order_items || foundOrder.items || []);
       } else {
         // No active unpaid orders
+        userSelectedOrderIdRef.current = null;
         selectedOrderIdRef.current = null;
+        setSelectedOrderId(null);
+        try { localStorage.removeItem('servora_selected_order_id'); } catch { }
         setActiveOrder(null);
         setActiveOrderItems([]);
       }
@@ -694,7 +724,22 @@ export function CustomerDashboardPage({
 
                 <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
                   {activeOrdersList.map(ord => {
-                    const isSelected = activeOrder?.id === ord.id;
+                    const ordIdStr = String(ord.id || '');
+                    const ordNumStr = String(ord.order_number || '');
+                    const isSelected = Boolean(
+                      (activeOrder && (
+                        (activeOrder.id && ordIdStr && String(activeOrder.id).toLowerCase() === ordIdStr.toLowerCase()) ||
+                        (activeOrder.order_number && ordNumStr && String(activeOrder.order_number) === ordNumStr)
+                      )) ||
+                      (selectedOrderId && (
+                        (ordIdStr && String(selectedOrderId).toLowerCase() === ordIdStr.toLowerCase()) ||
+                        (ordNumStr && String(selectedOrderId) === ordNumStr)
+                      )) ||
+                      (userSelectedOrderIdRef.current && (
+                        (ordIdStr && String(userSelectedOrderIdRef.current).toLowerCase() === ordIdStr.toLowerCase()) ||
+                        (ordNumStr && String(userSelectedOrderIdRef.current) === ordNumStr)
+                      ))
+                    );
                     const st = String(ord.status || 'received').toLowerCase();
                     const statusLabel = st.replace(/_/g, ' ').toUpperCase();
                     return (
@@ -702,9 +747,17 @@ export function CustomerDashboardPage({
                         key={ord.id}
                         type="button"
                         onClick={() => {
-                          selectedOrderIdRef.current = ord.id;
+                          userSelectedOrderIdRef.current = ordIdStr;
+                          selectedOrderIdRef.current = ordIdStr;
+                          setSelectedOrderId(ordIdStr);
+                          try {
+                            localStorage.setItem('servora_selected_order_id', ordIdStr);
+                            localStorage.setItem('servora_active_order_id', ordIdStr);
+                            if (ord.order_number) localStorage.setItem('servora_active_order_num', String(ord.order_number));
+                            if (ord.table_label) localStorage.setItem('servora_active_order_table', String(ord.table_label));
+                          } catch { }
                           setActiveOrder(ord);
-                          setActiveOrderItems(ord.order_items || []);
+                          setActiveOrderItems(ord.order_items || ord.items || []);
                         }}
                         style={{
                           flex: '0 0 auto',
@@ -1516,9 +1569,18 @@ export function CustomerDashboardPage({
                       const st = String(o.status || '').toLowerCase();
                       const isPaid = isOrderSettledPaid(o);
                       if (!isPaid && st !== 'cancelled' && st !== 'completed') {
-                        selectedOrderIdRef.current = o.id;
+                        const oIdStr = String(o.id);
+                        userSelectedOrderIdRef.current = oIdStr;
+                        selectedOrderIdRef.current = oIdStr;
+                        setSelectedOrderId(oIdStr);
+                        try {
+                          localStorage.setItem('servora_selected_order_id', oIdStr);
+                          localStorage.setItem('servora_active_order_id', oIdStr);
+                          if (o.order_number) localStorage.setItem('servora_active_order_num', String(o.order_number));
+                          if (o.table_label) localStorage.setItem('servora_active_order_table', String(o.table_label));
+                        } catch { }
                         setActiveOrder(o);
-                        setActiveOrderItems(o.order_items || []);
+                        setActiveOrderItems(o.order_items || o.items || []);
                         setActiveTab('tracker');
                       } else {
                         setReceiptModalOrder(o);
@@ -2328,7 +2390,11 @@ Thank you for dining at Servora!
                           }
                           try {
                             localStorage.setItem(`servora_order_paid_${activeOrder.id}`, 'paid');
+                            localStorage.removeItem('servora_selected_order_id');
                           } catch { }
+                          userSelectedOrderIdRef.current = null;
+                          setSelectedOrderId(null);
+                          selectedOrderIdRef.current = null;
                           setActiveOrder((prev: any) => prev ? { ...prev, payment_status: 'paid', status: 'completed' } : null);
                           setPastOrders(prev => prev.map(o => o.id === activeOrder.id ? { ...o, payment_status: 'paid', status: 'completed' } : o));
                           if (setNotice) {

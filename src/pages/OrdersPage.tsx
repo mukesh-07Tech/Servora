@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   Bell,
@@ -56,6 +56,7 @@ export function OrdersPage({ setNotice, globalSearch }: { setNotice?: (n: any) =
   const [selectedOrderType, setSelectedOrderType] = useState<string>('all');
   const [liveOrdersOnly, setLiveOrdersOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState(globalSearch || '');
+  const selectedOrderIdRef = useRef<string | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(() => {
     const list = getCached<any[]>('orders_all');
     return list && list.length ? list[0] : null;
@@ -79,7 +80,18 @@ export function OrdersPage({ setNotice, globalSearch }: { setNotice?: (n: any) =
       const [o, m, cReqs] = await Promise.all([getOrders({}, force), getMenu(true, force), getPendingCancellationRequests()]);
       if (o !== null && o !== undefined) {
         setOrders(o);
-        setSelectedOrder((prev: any) => (prev && o.find((it: any) => it.id === prev.id)) ? prev : (o[0] || null));
+        setSelectedOrder((prev: any) => {
+          const targetId = selectedOrderIdRef.current || (prev?.id ? String(prev.id) : null);
+          if (targetId) {
+            const targetLower = targetId.toLowerCase();
+            const match = o.find((it: any) => 
+              (it.id && String(it.id).toLowerCase() === targetLower) ||
+              (it.order_number && (String(it.order_number) === targetId || `svr${it.order_number}`.toLowerCase() === targetLower || `#svr${it.order_number}`.toLowerCase() === targetLower))
+            );
+            if (match) return match;
+          }
+          return prev || o[0] || null;
+        });
       }
       if (m !== null && m !== undefined) setMenuItems(m);
       if (cReqs) setCancelRequests(cReqs);
@@ -413,7 +425,12 @@ Total: ₹${Number(activeOrder.total || 0).toFixed(2)}
                   </tr>
                 ) : (
                   filteredOrders.slice((page - 1) * rowsPerPage, page * rowsPerPage).map(order => {
-                    const isSelected = activeOrder?.id === order.id;
+                    const isSelected = Boolean(
+                      activeOrder && (
+                        (activeOrder.id && order.id && String(activeOrder.id).toLowerCase() === String(order.id).toLowerCase()) ||
+                        (activeOrder.order_number && order.order_number && String(activeOrder.order_number) === String(order.order_number))
+                      )
+                    );
                     const itemsSummary = (order.order_items || [])
                       .map((it: any) => `${it.item_name}${Number(it.quantity) > 1 ? ` (${it.quantity})` : ''}`)
                       .join(', ') || 'Idli (2), Filter Coffee';
@@ -427,7 +444,10 @@ Total: ₹${Number(activeOrder.total || 0).toFixed(2)}
                       <tr
                         key={order.id}
                         className={`order-table-row ${borderClass} ${isSelected ? 'row-selected' : ''}`}
-                        onClick={() => setSelectedOrder(order)}
+                        onClick={() => {
+                          selectedOrderIdRef.current = String(order.id);
+                          setSelectedOrder(order);
+                        }}
                       >
                         <td className="bold-order-id-cell">
                           <span className="order-id-hash">#SVR{order.order_number || '1045'}</span>
@@ -458,6 +478,7 @@ Total: ₹${Number(activeOrder.total || 0).toFixed(2)}
                               title="View details"
                               onClick={(e) => {
                                 e.stopPropagation();
+                                selectedOrderIdRef.current = String(order.id);
                                 setSelectedOrder(order);
                               }}
                             >
@@ -469,6 +490,7 @@ Total: ₹${Number(activeOrder.total || 0).toFixed(2)}
                               title="More options"
                               onClick={(e) => {
                                 e.stopPropagation();
+                                selectedOrderIdRef.current = String(order.id);
                                 setSelectedOrder(order);
                               }}
                             >
@@ -541,7 +563,10 @@ Total: ₹${Number(activeOrder.total || 0).toFixed(2)}
             <button
               type="button"
               className="drawer-close-btn"
-              onClick={() => setSelectedOrder(null)}
+              onClick={() => {
+                selectedOrderIdRef.current = null;
+                setSelectedOrder(null);
+              }}
               title="Close Details"
             >
               <X size={16} />
