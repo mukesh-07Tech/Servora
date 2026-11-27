@@ -40,3 +40,11 @@ Merged the reference's cancel-request flow and bill fixes into the corrected pro
 - Removed the dead "favourite" heart button, fixed broken cart thumbnails, renamed Cancel Order to Cancel Request.
 - Tested at 360, 375, 390, 414, 430, 768, 820, 1024, 1280 and 1440 px: no horizontal overflow, no page errors (mocked API).
 - Known limitation: the customer "OTP login" only stores a flag in the browser; it is not a server session. Treat the customer dashboard as convenience, not security.
+
+## Update: your new features merged (Servora__2__1.zip)
+Merged without changing the UI: multiple active orders with an order switcher, a pinned selection that survives live polling (customer dashboard and staff Orders), Pay Bill enabled only after the order is served plus the 10 minute timer, "Order More / Fresh Booking" after a paid bill without login, and the table number persisting across reloads.
+- **One change under the hood (security):** those features read orders by phone number, table name and order number straight from the database as an anonymous visitor. That only worked with open read policies that would expose every guest's orders to anyone. Instead, every order placed from a device keeps its own access token and the dashboard loads them with the new `get_my_orders` function (migration `202611270005`), which returns only orders whose token is valid.
+- **Behaviour difference:** the dashboard shows the orders placed from this phone or browser during the last 12 hours (the order token lifetime). Other diners' orders at the same table, and lookups by phone number from another device, are no longer visible; those need a real OTP login.
+- Browser-stored "paid" flags are not trusted; paid status comes from the server.
+- **Run migration `202611270005` in Supabase** (in addition to 0001 to 0004).
+- Tested: database isolation on PostgreSQL (own orders only, wrong or missing tokens ignored, anonymous direct reads return nothing), multi-order switching and pin persistence, pay gating, fresh booking, table persistence, at 390, 820 and 1440px; staff roles and cancel approval re-run with no regressions.

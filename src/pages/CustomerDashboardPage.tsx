@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Activity,
@@ -36,7 +36,7 @@ import {
   XCircle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { getCached, getOrderCancellationStatus, submitOrderCancellationRequest, lookupMenuItemPrice, updateOrderPaymentStatus } from '../lib/data';
+import { getMyOrders, getMyOrderToken, rememberMyOrder, getCached, getOrderCancellationStatus, submitOrderCancellationRequest, lookupMenuItemPrice, updateOrderPaymentStatus } from '../lib/data';
 
 export function CustomerDashboardPage({
   setNotice
@@ -75,6 +75,12 @@ export function CustomerDashboardPage({
   // Live order state - dynamic from database
   const [activeOrder, setActiveOrder] = useState<any | null>(null);
   const [activeOrderItems, setActiveOrderItems] = useState<any[]>([]);
+  const [activeOrdersList, setActiveOrdersList] = useState<any[]>([]);
+  // Explicit user-pinned order key (set ONLY when diner clicks an order button or card)
+  const [userPinnedOrderKey, setUserPinnedOrderKey] = useState<string | null>(() => {
+    return localStorage.getItem('servora_selected_order_id') || null;
+  });
+  const userPinnedOrderKeyRef = useRef<string | null>(localStorage.getItem('servora_selected_order_id') || null);
 
   // Historical data
   const [pastOrders, setPastOrders] = useState<any[]>([]);
@@ -105,6 +111,12 @@ export function CustomerDashboardPage({
   const [cancellationRequested, setCancellationRequested] = useState(false);
   const [cancellationRejected, setCancellationRejected] = useState(false);
 
+  // Helper to check if an order is paid
+  const isOrderSettledPaid = (o: any) => {
+    if (!o) return false;
+    return o.payment_status === 'paid' || o.status === 'completed';
+  };
+
   // 1. Load customer data from Supabase
   const loadCustomerData = async () => {
     if (!supabase) {
@@ -113,7 +125,8 @@ export function CustomerDashboardPage({
     }
 
     try {
-      const storedOrderId = localStorage.getItem('servora_active_order_id');
+      const userTargetKey = userPinnedOrderKeyRef.current || userPinnedOrderKey || localStorage.getItem('servora_selected_order_id');
+      const storedActiveOrderId = localStorage.getItem('servora_active_order_id');
       const storedNum = localStorage.getItem('servora_active_order_num');
       const storedTable = localStorage.getItem('servora_active_order_table');
       const phoneDigits = customerPhone.replace(/\D/g, '').slice(-10);
@@ -121,101 +134,136 @@ export function CustomerDashboardPage({
       let foundOrder: any = null;
       let orderList: any[] = [];
 
-      // 1. If we have a direct active order from recent dine-in session, load it first
-      if (storedOrderId) {
-        let sOrder: any = null;
+      // 1. Load every order placed from this browser. Each order carries its own access token,
+      //    so the server only returns orders this diner is entitled to see.
+      let directStoredOrder: any = null;
+      if (storedActiveOrderId && localStorage.getItem('servora_active_order_token')) {
+        rememberMyOrder({
+          id: storedActiveOrderId,
+          token: localStorage.getItem('servora_active_order_token') || '',
+          number: storedNum || undefined,
+          table: storedTable || undefined
+        });
+      }
+      const myOrders = await getMyOrders();
+      for (const sOrder of myOrders) {
+        if (!orderList.some(o => o.id === sOrder.id)) orderList.push(sOrder);
+      }
+      if (storedActiveOrderId) directStoredOrder = orderList.find(o => o.id === storedActiveOrderId) || null;
+      void phoneDigits;
 
-        // Try public RPC first
-        try {
-          const { data } = await supabase.rpc('get_order_status_public', { p_order_id: storedOrderId, p_access_token: localStorage.getItem('servora_active_order_token') || '' });
-          if (data && data.id) sOrder = data;
-        } catch { }
-
-        if (!sOrder) {
-          const { data } = await supabase
-            .from('orders')
-            .select('*, order_items(*)')
-            .eq('id', storedOrderId)
-            .maybeSingle();
-          if (data) sOrder = data;
-        }
-
-        if (!sOrder && !isNaN(Number(storedOrderId))) {
-          const { data: numOrder } = await supabase
-            .from('orders')
-            .select('*, order_items(*)')
-            .eq('order_number', Number(storedOrderId))
-            .maybeSingle();
-          if (numOrder) sOrder = numOrder;
-        }
-
-        if (sOrder) {
-          foundOrder = sOrder;
-          orderList = [sOrder];
-          setActiveOrder(sOrder);
-          setActiveOrderItems(sOrder.order_items || []);
-        }
+      // Always retain currently viewed activeOrder if present in state
+      if (activeOrder && !orderList.some(o => o.id === activeOrder.id)) {
+        orderList.push(activeOrder);
       }
 
-      // 1b. Try by stored order number
-      if (!foundOrder && storedNum && !isNaN(Number(storedNum))) {
-        const { data: numOrder } = await supabase
-          .from('orders')
-          .select('*, order_items(*)')
-          .eq('order_number', Number(storedNum))
-          .maybeSingle();
-        if (numOrder) {
-          foundOrder = numOrder;
-          orderList = [numOrder];
-          setActiveOrder(numOrder);
-          setActiveOrderItems(numOrder.order_items || []);
-        }
-      }
+      // ALWAYS sort orderList consistently by created_at descending, then order_number descending
+      orderList.sort((a, b) => {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        if (timeB !== timeA) return timeB - timeA;
+        return Number(b.order_number || 0) - Number(a.order_number || 0);
+      });
 
-      // 2. Query orders for customer phone if available
-      if (phoneDigits && phoneDigits.length >= 10 && phoneDigits !== '9876543210') {
-        const { data: ordersData } = await supabase
-          .from('orders')
-          .select('*, order_items(*)')
-          .ilike('customer_phone', `%${phoneDigits}%`)
-          .order('created_at', { ascending: false });
-
-        if (ordersData && ordersData.length > 0) {
-          orderList = ordersData;
-          if (!foundOrder) {
-            const current = ordersData.find(o => o.status !== 'completed' && o.status !== 'cancelled') || ordersData[0];
-            foundOrder = current;
-            setActiveOrder(current);
-            setActiveOrderItems(current.order_items || []);
-          }
-        }
-      }
-
-      // 3. Fallback to table active order if still not found
-      if (!foundOrder && storedTable) {
-        const { data: tableOrders } = await supabase
-          .from('orders')
-          .select('*, order_items(*)')
-          .ilike('table_label', `%${storedTable}%`)
-          .not('status', 'in', '(completed,cancelled)')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (tableOrders) {
-          foundOrder = tableOrders;
-          orderList = [tableOrders];
-          setActiveOrder(tableOrders);
-          setActiveOrderItems(tableOrders.order_items || []);
-        }
-      }
-
+      // All past orders history (including paid and completed)
       setPastOrders(orderList);
+
+      // Active / Ongoing orders: MUST NOT be paid, MUST NOT be cancelled, and MUST NOT be completed
+      const activeUnpaidOrders = orderList.filter(o => {
+        const isPaid = isOrderSettledPaid(o);
+        const st = String(o.status || '').toLowerCase();
+        return !isPaid && st !== 'cancelled' && st !== 'completed';
+      });
+
+      // Sort activeUnpaidOrders stably
+      activeUnpaidOrders.sort((a, b) => {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        if (timeB !== timeA) return timeB - timeA;
+        return Number(b.order_number || 0) - Number(a.order_number || 0);
+      });
+
+      setActiveOrdersList(activeUnpaidOrders);
+
+      // Select which active order to show in detail
+      if (activeUnpaidOrders.length > 0) {
+        // Priority 1: User explicitly pinned/selected order
+        const userTarget = userPinnedOrderKeyRef.current || localStorage.getItem('servora_selected_order_id');
+        let matchedOrder: any = null;
+
+        if (userTarget) {
+          const targetStr = String(userTarget).trim().toLowerCase();
+          matchedOrder = activeUnpaidOrders.find(o => 
+            (o.id && String(o.id).toLowerCase() === targetStr) ||
+            (o.order_number && (
+              String(o.order_number) === targetStr ||
+              `svr${o.order_number}`.toLowerCase() === targetStr ||
+              `#svr${o.order_number}`.toLowerCase() === targetStr
+            ))
+          );
+        }
+
+        // Priority 2: Keep currently active order if it is still in activeUnpaidOrders
+        if (!matchedOrder && activeOrder) {
+          matchedOrder = activeUnpaidOrders.find(o => o.id === activeOrder.id);
+        }
+
+        let chosen: any = null;
+        if (matchedOrder) {
+          chosen = matchedOrder;
+        } else if (userTarget && activeOrder && !isOrderSettledPaid(activeOrder) && activeOrder.status !== 'completed' && activeOrder.status !== 'cancelled') {
+          // Keep current active order in place rather than jumping to newest order!
+          chosen = activeOrder;
+        } else {
+          // Only if no user pinned order or if pinned order is settled, fall back to first unpaid order
+          chosen = activeUnpaidOrders[0];
+        }
+
+        // If user explicitly pinned an order, KEEP THAT PIN LOCKED!
+        if (matchedOrder && userTarget) {
+          const chosenKey = String(matchedOrder.order_number || matchedOrder.id || '');
+          userPinnedOrderKeyRef.current = chosenKey;
+          setUserPinnedOrderKey(chosenKey);
+          try {
+            localStorage.setItem('servora_selected_order_id', chosenKey);
+            localStorage.setItem('servora_active_order_id', String(matchedOrder.id));
+            if (matchedOrder.order_number) localStorage.setItem('servora_active_order_num', String(matchedOrder.order_number));
+            if (matchedOrder.table_label) localStorage.setItem('servora_active_order_table', String(matchedOrder.table_label));
+          } catch { }
+        } else if (!userTarget) {
+          // If no user target was ever pinned, we display chosen (first active) without locking a pin
+          try {
+            localStorage.setItem('servora_active_order_id', String(chosen.id));
+            if (chosen.order_number) localStorage.setItem('servora_active_order_num', String(chosen.order_number));
+          } catch { }
+        }
+
+        foundOrder = chosen;
+        setActiveOrder(chosen);
+        setActiveOrderItems(chosen.order_items || chosen.items || []);
+      } else {
+        // Only clear user pin if the pinned order has actually been paid or completed or cancelled in orderList
+        const currentTarget = userPinnedOrderKeyRef.current || localStorage.getItem('servora_selected_order_id');
+        const targetStr = currentTarget ? String(currentTarget).trim().toLowerCase() : '';
+        const orderInHistory = targetStr ? orderList.find(o => 
+          (o.id && String(o.id).toLowerCase() === targetStr) ||
+          (o.order_number && (String(o.order_number) === targetStr || `svr${o.order_number}`.toLowerCase() === targetStr || `#svr${o.order_number}`.toLowerCase() === targetStr))
+        ) : null;
+
+        if (!currentTarget || (orderInHistory && (isOrderSettledPaid(orderInHistory) || orderInHistory.status === 'completed' || orderInHistory.status === 'cancelled'))) {
+          userPinnedOrderKeyRef.current = null;
+          setUserPinnedOrderKey(null);
+          try { localStorage.removeItem('servora_selected_order_id'); } catch { }
+          setActiveOrder(null);
+          setActiveOrderItems([]);
+        }
+      }
 
       if (foundOrder) {
         if (foundOrder.status === 'cancelled') {
           setCancellationRequested(false);
         } else {
-          const cancelState = await getOrderCancellationStatus(foundOrder.id, localStorage.getItem('servora_active_order_token') || '');
+          const cancelState = await getOrderCancellationStatus(foundOrder.id, getMyOrderToken(foundOrder.id));
           if (cancelState.status === 'pending') {
             setCancellationRequested(true);
             setCancellationRejected(false);
@@ -226,13 +274,6 @@ export function CustomerDashboardPage({
             setCancellationRequested(false);
           }
         }
-      }
-
-      // If no order is found at all, show the empty state cleanly
-      if (!foundOrder) {
-        setActiveOrder(null);
-        setActiveOrderItems([]);
-        setPastOrders([]);
       }
 
       // Fetch bills matching customer orders
@@ -329,7 +370,7 @@ export function CustomerDashboardPage({
     try {
       await submitOrderCancellationRequest({
         orderId: activeOrder.id,
-        accessToken: localStorage.getItem('servora_active_order_token') || '',
+        accessToken: getMyOrderToken(activeOrder.id),
         reason: reasonToUse
       });
       setCancellationRequested(true);
@@ -433,8 +474,10 @@ export function CustomerDashboardPage({
             }}
           >
             <Activity size={18} className="nav-item-icon" />
-            <span className="nav-item-text">Live Order Tracker</span>
-            {activeOrder && activeOrder.status !== 'completed' && (
+            <span className="nav-item-text">
+              Live Order Tracker {activeOrdersList.length > 0 ? `(${activeOrdersList.length})` : ''}
+            </span>
+            {activeOrdersList.length > 0 && (
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 8px #22c55e', marginLeft: 'auto' }} />
             )}
           </button>
@@ -613,6 +656,105 @@ export function CustomerDashboardPage({
             ======================================================== */}
         {activeTab === 'tracker' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+            {/* Multiple Active Orders Switcher Strip */}
+            {activeOrdersList.length > 1 && (
+              <div
+                style={{
+                  background: '#ffffff',
+                  borderRadius: '16px',
+                  padding: '14px 18px',
+                  border: '1.5px solid #fed7aa',
+                  boxShadow: '0 2px 10px rgba(234, 88, 12, 0.06)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 8px #22c55e' }} />
+                    <span style={{ fontSize: 13, fontWeight: 800, color: '#3b1e10', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Active Orders In Progress ({activeOrdersList.length})
+                    </span>
+                  </div>
+                  <small style={{ color: '#8a6452', fontSize: 12 }}>
+                    Click an order below to track its live status
+                  </small>
+                </div>
+
+                <div className="order-switcher-strip" style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
+                  {activeOrdersList.map(ord => {
+                    const ordNumStr = String(ord.order_number || '');
+                    const ordIdStr = String(ord.id || '');
+                    const currentKey = userPinnedOrderKey || userPinnedOrderKeyRef.current || (activeOrder ? String(activeOrder.order_number || activeOrder.id || '') : '');
+                    const isSelected = Boolean(
+                      currentKey && (
+                        (ordNumStr && currentKey === ordNumStr) ||
+                        (ordIdStr && currentKey.toLowerCase() === ordIdStr.toLowerCase()) ||
+                        `svr${ordNumStr}`.toLowerCase() === currentKey.toLowerCase() ||
+                        `#svr${ordNumStr}`.toLowerCase() === currentKey.toLowerCase()
+                      )
+                    );
+                    const st = String(ord.status || 'received').toLowerCase();
+                    const statusLabel = st.replace(/_/g, ' ').toUpperCase();
+                    return (
+                      <button
+                        key={ord.id || ord.order_number}
+                        type="button"
+                        onClick={() => {
+                          const chosenKey = String(ord.order_number || ord.id || '');
+                          userPinnedOrderKeyRef.current = chosenKey;
+                          setUserPinnedOrderKey(chosenKey);
+                          try {
+                            localStorage.setItem('servora_selected_order_id', chosenKey);
+                            localStorage.setItem('servora_active_order_id', String(ord.id || chosenKey));
+                            if (ord.order_number) localStorage.setItem('servora_active_order_num', String(ord.order_number));
+                            if (ord.table_label) localStorage.setItem('servora_active_order_table', String(ord.table_label));
+                          } catch { }
+                          setActiveOrder(ord);
+                          setActiveOrderItems(ord.order_items || ord.items || []);
+                        }}
+                        style={{
+                          flex: '0 0 auto',
+                          padding: '10px 16px',
+                          borderRadius: 12,
+                          background: isSelected ? 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)' : '#fffaf5',
+                          color: isSelected ? '#ffffff' : '#451a03',
+                          border: isSelected ? '1.5px solid #ea580c' : '1.5px solid #fed7aa',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 12,
+                          boxShadow: isSelected ? '0 4px 12px rgba(234, 88, 12, 0.3)' : 'none',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <div style={{ textAlign: 'left' }}>
+                          <div style={{ fontSize: 14, fontWeight: 800 }}>
+                            Order #{ord.order_number ? `SVR${ord.order_number}` : String(ord.id).slice(-4).toUpperCase()}
+                          </div>
+                          <div style={{ fontSize: 11, opacity: 0.9, marginTop: 2 }}>
+                            Table {ord.table_label || '—'} &bull; {ord.created_at ? new Date(ord.created_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase() : ''}
+                          </div>
+                        </div>
+
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 800,
+                            padding: '3px 8px',
+                            borderRadius: 6,
+                            background: isSelected ? 'rgba(255,255,255,0.22)' : '#ffedd5',
+                            color: isSelected ? '#ffffff' : '#c2410c',
+                            textTransform: 'uppercase'
+                          }}
+                        >
+                          {statusLabel}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {!activeOrder ? (
               <div
                 style={{
@@ -1155,18 +1297,50 @@ export function CustomerDashboardPage({
                           </div>
 
                           {!isOrderPaid ? (() => {
+                            const isServed = currentStage === 3 || ['served', 'completed'].includes(String(activeOrder.status || '').toLowerCase());
+                            if (!isServed) {
+                              return (
+                                <div style={{ marginTop: '16px' }}>
+                                  <button
+                                    type="button"
+                                    disabled={true}
+                                    style={{
+                                      width: '100%',
+                                      padding: '13px 18px',
+                                      borderRadius: '12px',
+                                      background: '#f3e5d8',
+                                      color: '#8c6e58',
+                                      border: '1.5px solid #ebdcd0',
+                                      fontWeight: 700,
+                                      fontSize: '13.5px',
+                                      cursor: 'not-allowed',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      gap: '8px'
+                                    }}
+                                  >
+                                    <Clock size={16} /> Pay Bill (Available after Food is Served)
+                                  </button>
+                                  <div style={{ textAlign: 'center', marginTop: 6, fontSize: 11, color: '#8c6e58' }}>
+                                    Your food is being prepared. Bill payment will be enabled once your order is served at the table.
+                                  </div>
+                                </div>
+                              );
+                            }
+
                             const servedKey = `servora_served_time_${activeOrder.id}`;
                             let localServedTime = Number(localStorage.getItem(servedKey) || 0);
-                            if (!localServedTime && currentStage === 3) {
+                            if (!localServedTime && isServed) {
                               const rawTime = activeOrder.served_at || activeOrder.updated_at;
                               localServedTime = rawTime ? new Date(rawTime).getTime() : Date.now();
                               try { localStorage.setItem(servedKey, String(localServedTime)); } catch { }
                             }
-                            const elapsedSec = currentStage === 3 && localServedTime > 0 ? Math.floor((Date.now() - localServedTime) / 1000) : 0;
+                            const elapsedSec = isServed && localServedTime > 0 ? Math.floor((Date.now() - localServedTime) / 1000) : 0;
                             const remainingSec = Math.max(0, 600 - elapsedSec);
                             const mm = String(Math.floor(remainingSec / 60)).padStart(2, '0');
                             const ss = String(remainingSec % 60).padStart(2, '0');
-                            const isTimerActive = currentStage === 3 && remainingSec > 0;
+                            const isTimerActive = isServed && remainingSec > 0;
 
                             if (isTimerActive) {
                               return (
@@ -1193,7 +1367,7 @@ export function CustomerDashboardPage({
                                     <Clock size={16} /> Pay Bill (Available in {mm}:{ss})
                                   </button>
                                   <div style={{ textAlign: 'center', marginTop: 6, fontSize: 11, color: '#8c6e58' }}>
-                                    Pay button activates in {mm}:{ss} (10 mins after served) so you can enjoy your meal.
+                                    Pay button activates in {mm}:{ss} (10 mins after served) so you can enjoy your meal uninterrupted.
                                   </div>
                                 </div>
                               );
@@ -1227,23 +1401,55 @@ export function CustomerDashboardPage({
                               </button>
                             );
                           })() : (
-                            <div
-                              style={{
-                                marginTop: '14px',
-                                padding: '10px 14px',
-                                borderRadius: '10px',
-                                background: '#dcfce7',
-                                color: '#16a34a',
-                                fontWeight: 800,
-                                fontSize: '13px',
-                                textAlign: 'center',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '6px'
-                              }}
-                            >
-                              <CheckCircle2 size={16} /> Bill Paid &amp; Settled
+                            <div>
+                              <div
+                                style={{
+                                  marginTop: '14px',
+                                  padding: '10px 14px',
+                                  borderRadius: '10px',
+                                  background: '#dcfce7',
+                                  color: '#16a34a',
+                                  fontWeight: 800,
+                                  fontSize: '13px',
+                                  textAlign: 'center',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '6px'
+                                }}
+                              >
+                                <CheckCircle2 size={16} /> Bill Paid &amp; Settled
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  try {
+                                    localStorage.removeItem('servora_active_order_id');
+                                    localStorage.removeItem('servora_active_order_token');
+                                    localStorage.removeItem('servora_active_order_num');
+                                    localStorage.removeItem('servora_active_order_table');
+                                  } catch { }
+                                  window.location.href = '/order';
+                                }}
+                                style={{
+                                  marginTop: '8px',
+                                  width: '100%',
+                                  padding: '10px 14px',
+                                  borderRadius: '10px',
+                                  background: '#16a34a',
+                                  color: '#fff',
+                                  border: 'none',
+                                  fontWeight: 800,
+                                  fontSize: '13px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '6px',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                <Utensils size={15} /> Start Fresh Dine-In Order
+                              </button>
                             </div>
                           )}
 
@@ -1309,7 +1515,28 @@ export function CustomerDashboardPage({
                       padding: '16px 20px',
                       borderRadius: '16px',
                       background: '#fffbf7',
-                      border: '1px solid #f3e5d8'
+                      border: '1px solid #f3e5d8',
+                      cursor: 'pointer'
+                    }}
+                    onClick={() => {
+                      const st = String(o.status || '').toLowerCase();
+                      const isPaid = isOrderSettledPaid(o);
+                      if (!isPaid && st !== 'cancelled' && st !== 'completed') {
+                        const chosenKey = String(o.order_number || o.id || '');
+                        userPinnedOrderKeyRef.current = chosenKey;
+                        setUserPinnedOrderKey(chosenKey);
+                        try {
+                          localStorage.setItem('servora_selected_order_id', chosenKey);
+                          localStorage.setItem('servora_active_order_id', String(o.id || chosenKey));
+                          if (o.order_number) localStorage.setItem('servora_active_order_num', String(o.order_number));
+                          if (o.table_label) localStorage.setItem('servora_active_order_table', String(o.table_label));
+                        } catch { }
+                        setActiveOrder(o);
+                        setActiveOrderItems(o.order_items || o.items || []);
+                        setActiveTab('tracker');
+                      } else {
+                        setReceiptModalOrder(o);
+                      }
                     }}
                   >
                     <div>

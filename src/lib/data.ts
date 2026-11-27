@@ -33,7 +33,7 @@ try {
       }
     });
   }
-} catch {}
+} catch { }
 
 export function getCached<T>(key: string, maxAgeMs = CACHE_TTL_MS): T | null {
   const mem = MEM_CACHE.get(key);
@@ -94,7 +94,7 @@ export function invalidateCache(key?: string): void {
           MEM_CACHE.delete('orders_all');
         }
       }
-    } catch {}
+    } catch { }
   } else {
     MEM_CACHE.clear();
     try {
@@ -106,7 +106,7 @@ export function invalidateCache(key?: string): void {
         }
         keysToRemove.forEach(k => localStorage.removeItem(k));
       }
-    } catch {}
+    } catch { }
   }
 }
 
@@ -212,7 +212,7 @@ export async function getMenu(includeUnavailable = false, forceRefresh = false) 
     if (!mem || Date.now() - mem.timestamp > BG_STALE_MS) {
       fetchMenuFromDb(includeUnavailable).then(fresh => {
         if (fresh && fresh.length > 0) setCached(cacheKey, fresh);
-      }).catch(() => {});
+      }).catch(() => { });
     }
     return cached;
   }
@@ -264,7 +264,7 @@ export async function getOrders(opts: { activeOnly?: boolean } = {}, forceRefres
           setCached(cacheKey, fresh);
           if (!opts.activeOnly) setCached('orders_all', fresh);
         }
-      }).catch(() => {});
+      }).catch(() => { });
     }
     return cached;
   }
@@ -316,10 +316,10 @@ async function fetchOrdersFromDb(opts: { activeOnly?: boolean } = {}) {
       let unit = Number(it.unit_price) || 0;
       if (unit <= 0) {
         unit = (it.menu_item_id && priceMap.get(it.menu_item_id)) ||
-               (it.item_name && priceMap.get(it.item_name.trim().toLowerCase())) ||
-               lookupMenuItemPrice(it.menu_item_id, cachedMenu) ||
-               lookupMenuItemPrice(it.item_name, cachedMenu) ||
-               0;
+          (it.item_name && priceMap.get(it.item_name.trim().toLowerCase())) ||
+          lookupMenuItemPrice(it.menu_item_id, cachedMenu) ||
+          lookupMenuItemPrice(it.item_name, cachedMenu) ||
+          0;
       }
       let line = Number(it.line_total) || 0;
       if (line <= 0) {
@@ -363,7 +363,7 @@ export async function getTables(forceRefresh = false) {
     if (!mem || Date.now() - mem.timestamp > BG_STALE_MS) {
       fetchTablesFromDb().then(fresh => {
         if (fresh && fresh.length > 0) setCached('tables', fresh);
-      }).catch(() => {});
+      }).catch(() => { });
     }
     return cached;
   }
@@ -396,7 +396,7 @@ export async function getCustomers(forceRefresh = false) {
     if (!mem || Date.now() - mem.timestamp > BG_STALE_MS) {
       fetchCustomersFromDb().then(fresh => {
         if (fresh !== null && fresh !== undefined) setCached('customers', fresh);
-      }).catch(() => {});
+      }).catch(() => { });
     }
     return cached;
   }
@@ -869,4 +869,50 @@ export async function settleTableBill(orderIds: string[], paymentMode: string, d
   invalidateCache('orders_active');
   invalidateCache('dining_tables');
   return data as { success: boolean; bill_number: number; subtotal: number; tax: number; discount: number; total: number };
+}
+
+// ---------------------------------------------------------------------------
+// "My orders" on this device. Every order placed from this browser keeps its own access token,
+// which the server checks. This is how a diner tracks several orders without any open table access.
+// ---------------------------------------------------------------------------
+const MY_ORDERS_KEY = 'servora_my_orders';
+export type MyOrderRef = { id: string; token: string; number?: string | number; table?: string; at?: number };
+
+function readMyOrders(): MyOrderRef[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(MY_ORDERS_KEY) || '[]');
+    return Array.isArray(raw) ? raw.filter((r: any) => r && r.id && r.token) : [];
+  } catch { return []; }
+}
+
+export function rememberMyOrder(ref: { id: string; token: string; number?: string | number; table?: string }) {
+  if (!ref?.id || !ref?.token) return;
+  try {
+    const list = readMyOrders().filter(r => r.id !== ref.id);
+    list.unshift({ ...ref, at: Date.now() });
+    localStorage.setItem(MY_ORDERS_KEY, JSON.stringify(list.slice(0, 20)));
+  } catch { }
+}
+
+/** Access token for one of this device's orders (falls back to the current active order token). */
+export function getMyOrderToken(orderId: string): string {
+  const hit = readMyOrders().find(r => r.id === orderId);
+  if (hit) return hit.token;
+  try { return localStorage.getItem('servora_active_order_id') === orderId ? (localStorage.getItem('servora_active_order_token') || '') : ''; } catch { return ''; }
+}
+
+/** Orders from this device whose access token is still valid (12 hours). */
+export async function getMyOrders(): Promise<any[]> {
+  if (!supabase) return [];
+  const refs = readMyOrders();
+  if (refs.length === 0) return [];
+  const { data, error } = await supabase.rpc('get_my_orders', { p_orders: refs.map(r => ({ id: r.id, token: r.token })) });
+  if (error || !Array.isArray(data)) return [];
+  const validIds = new Set(data.map((o: any) => o.id));
+  // forget references the server no longer accepts (expired)
+  try {
+    const kept = refs.filter(r => validIds.has(r.id));
+    if (kept.length !== refs.length) localStorage.setItem(MY_ORDERS_KEY, JSON.stringify(kept));
+  } catch { }
+  return data;
 }
