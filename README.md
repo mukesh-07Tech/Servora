@@ -207,3 +207,11 @@ Only `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` and the non-secret `VITE_APP_
 ## Remaining work before production
 
 The project is not yet production-certified. Still required: full order cancellation/modification approval UI, table merge/transfer and close-visit workflows, full inventory/recipe deduction, configurable menu time schedules, complete customer feedback and customer management, detailed analytics, settings forms, QR camera scanning for attendance, real SMS/WhatsApp/email provider delivery, AI semantic voice ordering, PDF invoice/receipt output, and a full browser/device/RLS acceptance test. Do not use this build for live financial operations until those items and the production security review are complete.
+
+## Deploy with Git + Vercel (no environment variables needed in Vercel)
+
+1. Push this repository to GitHub (the folder already contains a clean git history).
+2. In Vercel choose **Add New > Project**, import the repo, keep the detected **Vite** settings, and press **Deploy**.
+3. Run the SQL files in `supabase/migrations` in order in the Supabase SQL editor (first time, and whenever a new file is added).
+
+`.env` is committed on purpose. It holds only the public Supabase URL and public anon key, which are shipped to every browser anyway; data is protected by Row Level Security. **Never put a service-role key, database password or other secret in `.env`.** Private overrides go in `.env.local` (git-ignored). `scratch/` (maintenance scripts) and `dist/` are not committed.

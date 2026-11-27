@@ -31,3 +31,12 @@ Merged the reference's cancel-request flow and bill fixes into the corrected pro
 - Reference reintroduced emojis and arrows; removed again.
 - **Run the new migrations** in order: `202611270001` to `202611270004`.
 - **Tested:** migrations executed on a real PostgreSQL 16 with stubbed Supabase roles; permission tests for anon, customer token, kitchen, waiter, admin, unapproved and other-restaurant staff all behave as intended. UI tested with a mocked API (Approve calls the function from Kitchen, Orders and Billing; desktop and 390px). Not tested against your live Supabase, real RLS with the JS client, or the customer-side Cancel button end to end.
+
+## Update: customer mobile UI and deployment
+- New `src/customer-mobile.css` (loaded last) restyles the QR dine-in flow under 640px; desktop layout is unchanged. Same palette, fonts and logo.
+- **Check-in:** compact sticky bar, single-row stepper, table confirmed state with Change / Scan QR, collapsed table picker, large inputs (16px, no iOS zoom), sticky confirm button.
+- **Menu:** two-row header, sticky category tabs, scrollable quick-help chips, list-style dish cards with description and photo, bottom "View order" bar and slide-up order sheet, toasts moved to the top.
+- **Tracker, login and My Orders dashboard:** tidy summary row, vertical progress steps, fixed price/status overlap, login header alignment.
+- Removed the dead "favourite" heart button, fixed broken cart thumbnails, renamed Cancel Order to Cancel Request.
+- Tested at 360, 375, 390, 414, 430, 768, 820, 1024, 1280 and 1440 px: no horizontal overflow, no page errors (mocked API).
+- Known limitation: the customer "OTP login" only stores a flag in the browser; it is not a server session. Treat the customer dashboard as convenience, not security.

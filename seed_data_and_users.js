@@ -259,7 +259,7 @@ async function seed() {
   }
   console.log('✓ Tables T01 through T10 & QR tokens seeded!');
 
-  // 6. Demo staff accounts in auth.users and public.profiles with password "Password123!"
+  // 6. Demo staff accounts in auth.users and public.profiles with the password from DEMO_PASSWORD
   const demoUsers = [
     {
       id: 'd0000000-0000-0000-0000-000000000001',
@@ -288,7 +288,7 @@ async function seed() {
   ];
 
   for (const u of demoUsers) {
-    // Insert into auth.users with encrypted password "Password123!"
+    // Insert into auth.users with encrypted DEMO_PASSWORD
     await client.query(`
       insert into auth.users (
         id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -336,10 +336,10 @@ async function seed() {
     `, [u.id, restaurantId, u.fullName, u.phone, u.email, u.role, u.station]);
   }
 
-  console.log('✓ Demo accounts seeded for all roles with Password123!:');
-  console.log('  - Admin:   admin@servora.com   / Password123!');
-  console.log('  - Kitchen: kitchen@servora.com / Password123!');
-  console.log('  - Waiter:  waiter@servora.com  / Password123!');
+  console.log('✓ Demo accounts seeded for all roles (password = DEMO_PASSWORD):');
+  console.log('  - Admin:   admin@servora.com   / <DEMO_PASSWORD>');
+  console.log('  - Kitchen: kitchen@servora.com / <DEMO_PASSWORD>');
+  console.log('  - Waiter:  waiter@servora.com  / <DEMO_PASSWORD>');
 
   await client.end();
   console.log('\n>>> SUPABASE DATABASE & DATA FULLY CONFIGURED! <<<');
