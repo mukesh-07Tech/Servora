@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Activity,
@@ -76,6 +76,14 @@ export function CustomerDashboardPage({
   const [activeOrder, setActiveOrder] = useState<any | null>(null);
   const [activeOrderItems, setActiveOrderItems] = useState<any[]>([]);
   const [activeOrdersList, setActiveOrdersList] = useState<any[]>([]);
+  const selectedOrderIdRef = useRef<string | null>(null);
+
+  // Sync ref whenever activeOrder changes
+  useEffect(() => {
+    if (activeOrder?.id) {
+      selectedOrderIdRef.current = activeOrder.id;
+    }
+  }, [activeOrder?.id]);
 
   // Historical data
   const [pastOrders, setPastOrders] = useState<any[]>([]);
@@ -106,6 +114,14 @@ export function CustomerDashboardPage({
   const [cancellationRequested, setCancellationRequested] = useState(false);
   const [cancellationRejected, setCancellationRejected] = useState(false);
 
+  // Helper to check if an order is paid
+  const isOrderSettledPaid = (o: any) => {
+    if (!o) return false;
+    const localPaid = localStorage.getItem(`servora_order_paid_${o.id}`) === 'paid';
+    const remotePaid = o.payment_status === 'paid' || o.status === 'completed';
+    return localPaid || remotePaid;
+  };
+
   // 1. Load customer data from Supabase
   const loadCustomerData = async () => {
     if (!supabase) {
@@ -121,14 +137,6 @@ export function CustomerDashboardPage({
 
       let foundOrder: any = null;
       let orderList: any[] = [];
-
-      // Helper to check if an order is paid
-      const isOrderSettledPaid = (o: any) => {
-        if (!o) return false;
-        const localPaid = localStorage.getItem(`servora_order_paid_${o.id}`) === 'paid';
-        const remotePaid = o.payment_status === 'paid' || o.status === 'completed';
-        return localPaid || remotePaid;
-      };
 
       // 1. If we have a direct active order from recent dine-in session, load it
       let directStoredOrder: any = null;
@@ -243,13 +251,16 @@ export function CustomerDashboardPage({
 
       // Select which active order to show in detail
       if (activeUnpaidOrders.length > 0) {
-        // Keep currently viewed order if it's still in active list, else pick the first active unpaid
-        const stillActive = activeOrder ? activeUnpaidOrders.find(o => o.id === activeOrder.id) : null;
+        // Keep currently viewed order (via ref or state) if it's still in active list, else pick the first active unpaid
+        const targetId = selectedOrderIdRef.current || activeOrder?.id;
+        const stillActive = targetId ? activeUnpaidOrders.find(o => o.id === targetId) : null;
         foundOrder = stillActive || activeUnpaidOrders[0];
+        selectedOrderIdRef.current = foundOrder.id;
         setActiveOrder(foundOrder);
         setActiveOrderItems(foundOrder.order_items || []);
       } else {
         // No active unpaid orders
+        selectedOrderIdRef.current = null;
         setActiveOrder(null);
         setActiveOrderItems([]);
       }
@@ -691,6 +702,7 @@ export function CustomerDashboardPage({
                         key={ord.id}
                         type="button"
                         onClick={() => {
+                          selectedOrderIdRef.current = ord.id;
                           setActiveOrder(ord);
                           setActiveOrderItems(ord.order_items || []);
                         }}
@@ -1497,7 +1509,20 @@ export function CustomerDashboardPage({
                       padding: '16px 20px',
                       borderRadius: '16px',
                       background: '#fffbf7',
-                      border: '1px solid #f3e5d8'
+                      border: '1px solid #f3e5d8',
+                      cursor: 'pointer'
+                    }}
+                    onClick={() => {
+                      const st = String(o.status || '').toLowerCase();
+                      const isPaid = isOrderSettledPaid(o);
+                      if (!isPaid && st !== 'cancelled' && st !== 'completed') {
+                        selectedOrderIdRef.current = o.id;
+                        setActiveOrder(o);
+                        setActiveOrderItems(o.order_items || []);
+                        setActiveTab('tracker');
+                      } else {
+                        setReceiptModalOrder(o);
+                      }
                     }}
                   >
                     <div>
