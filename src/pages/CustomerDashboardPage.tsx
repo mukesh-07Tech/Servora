@@ -1279,18 +1279,50 @@ export function CustomerDashboardPage({
                           </div>
 
                           {!isOrderPaid ? (() => {
+                            const isServed = currentStage === 3 || ['served', 'completed'].includes(String(activeOrder.status || '').toLowerCase());
+                            if (!isServed) {
+                              return (
+                                <div style={{ marginTop: '16px' }}>
+                                  <button
+                                    type="button"
+                                    disabled={true}
+                                    style={{
+                                      width: '100%',
+                                      padding: '13px 18px',
+                                      borderRadius: '12px',
+                                      background: '#f3e5d8',
+                                      color: '#8c6e58',
+                                      border: '1.5px solid #ebdcd0',
+                                      fontWeight: 700,
+                                      fontSize: '13.5px',
+                                      cursor: 'not-allowed',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      gap: '8px'
+                                    }}
+                                  >
+                                    <Clock size={16} /> Pay Bill (Available after Food is Served)
+                                  </button>
+                                  <div style={{ textAlign: 'center', marginTop: 6, fontSize: 11, color: '#8c6e58' }}>
+                                    Your food is being prepared. Bill payment will be enabled once your order is served at the table.
+                                  </div>
+                                </div>
+                              );
+                            }
+
                             const servedKey = `servora_served_time_${activeOrder.id}`;
                             let localServedTime = Number(localStorage.getItem(servedKey) || 0);
-                            if (!localServedTime && currentStage === 3) {
+                            if (!localServedTime && isServed) {
                               const rawTime = activeOrder.served_at || activeOrder.updated_at;
                               localServedTime = rawTime ? new Date(rawTime).getTime() : Date.now();
                               try { localStorage.setItem(servedKey, String(localServedTime)); } catch { }
                             }
-                            const elapsedSec = currentStage === 3 && localServedTime > 0 ? Math.floor((Date.now() - localServedTime) / 1000) : 0;
+                            const elapsedSec = isServed && localServedTime > 0 ? Math.floor((Date.now() - localServedTime) / 1000) : 0;
                             const remainingSec = Math.max(0, 600 - elapsedSec);
                             const mm = String(Math.floor(remainingSec / 60)).padStart(2, '0');
                             const ss = String(remainingSec % 60).padStart(2, '0');
-                            const isTimerActive = currentStage === 3 && remainingSec > 0;
+                            const isTimerActive = isServed && remainingSec > 0;
 
                             if (isTimerActive) {
                               return (
@@ -1317,7 +1349,7 @@ export function CustomerDashboardPage({
                                     <Clock size={16} /> Pay Bill (Available in {mm}:{ss})
                                   </button>
                                   <div style={{ textAlign: 'center', marginTop: 6, fontSize: 11, color: '#8c6e58' }}>
-                                    Pay button activates in {mm}:{ss} (10 mins after served) so you can enjoy your meal.
+                                    Pay button activates in {mm}:{ss} (10 mins after served) so you can enjoy your meal uninterrupted.
                                   </div>
                                 </div>
                               );

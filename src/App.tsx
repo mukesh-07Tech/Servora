@@ -5931,6 +5931,7 @@ function CustomerPage({
     if (isTableNum) {
       const normalized = clean.toUpperCase().startsWith('T') ? clean.toUpperCase() : `T${clean.padStart(2, '0')}`;
       setTable(normalized);
+      try { localStorage.setItem('servora_active_order_table', normalized); } catch { }
       setTableState('valid');
       setRestaurantOpen(true);
       notify(setNotice, `Table ${normalized} confirmed. Welcome to Servora!`, 'success');
@@ -5944,7 +5945,11 @@ function CustomerPage({
     try {
       const info = await resolveTableToken(clean);
       if (info.valid) {
-        setTable(info.table_number || '');
+        const tblNum = info.table_number || '';
+        setTable(tblNum);
+        if (tblNum) {
+          try { localStorage.setItem('servora_active_order_table', tblNum); } catch { }
+        }
         setRestaurantOpen(info.is_open !== false);
         setTableState('valid');
         notify(setNotice, `Table ${info.table_number} confirmed.`, 'success');
@@ -5961,6 +5966,7 @@ function CustomerPage({
     const match = clean.match(/T\d+/i);
     const fallbackTable = match ? match[0].toUpperCase() : 'T01';
     setTable(fallbackTable);
+    try { localStorage.setItem('servora_active_order_table', fallbackTable); } catch { }
     setTableState('valid');
     setRestaurantOpen(true);
     notify(setNotice, `Table ${fallbackTable} confirmed. Welcome to Servora Dine-In!`, 'success');
@@ -5984,6 +5990,14 @@ function CustomerPage({
     const tbl = params.get('table') || '';
     if (tbl) {
       applyToken(tbl);
+    } else {
+      // Restore selected table from localStorage if user reloaded the page
+      try {
+        const cachedTable = localStorage.getItem('servora_active_order_table');
+        if (cachedTable) {
+          applyToken(cachedTable);
+        }
+      } catch { }
     }
     loadMenu();
 
@@ -6030,6 +6044,10 @@ function CustomerPage({
         if (savedName) setName(savedName);
         if (savedPhone) setPhone(savedPhone);
         const savedPaymentStatus = localStorage.getItem(`servora_order_paid_${savedOrderId}`);
+        if (savedTable && !table) {
+          setTable(savedTable);
+          setTableState('valid');
+        }
         if (savedOrderId && savedToken) {
           setOrder({
             id: savedOrderId,
@@ -6040,6 +6058,10 @@ function CustomerPage({
             table_label: savedTable || '—',
             customer_name: savedName || 'Guest'
           });
+          if (savedTable) {
+            setTable(savedTable);
+            setTableState('valid');
+          }
           if (localStorage.getItem(`servora_cancel_req_${savedOrderId}`) === 'true') {
             setCancellationRequested(true);
           }
