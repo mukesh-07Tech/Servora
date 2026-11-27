@@ -1,0 +1,22 @@
+project_id = "servora"
+
+[functions.request-test-otp]
+verify_jwt = false
+
+[functions.verify-test-otp]
+verify_jwt = false
+
+[functions.place-order]
+verify_jwt = false
+
+[functions.staff-register]
+verify_jwt = false
+
+[functions.create-table-qr]
+verify_jwt = true
+
+[functions.create-attendance-code]
+verify_jwt = true
+
+[functions.attendance-action]
+verify_jwt = true

@@ -1,0 +1,10 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+const cors={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization, x-client-info, apikey, content-type','Access-Control-Allow-Methods':'POST, OPTIONS'};
+const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...cors,'Content-Type':'application/json'}});
+const hash=async(v:string)=>{const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')};
+Deno.serve(async(req)=>{if(req.method==='OPTIONS')return new Response('ok',{headers:cors});try{
+ const auth=req.headers.get('Authorization')||'';const url=Deno.env.get('SUPABASE_URL')!,anon=Deno.env.get('SUPABASE_ANON_KEY')!,service=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;const userClient=createClient(url,anon,{global:{headers:{Authorization:auth}}});const {data:{user}}=await userClient.auth.getUser();if(!user)return json({error:'Sign in required.'},401);
+ const {data:p}=await userClient.from('profiles').select('role,approval_status,restaurant_id').eq('id',user.id).single();if(!p||p.role!=='admin'||p.approval_status!=='approved')return json({error:'Administrator access required.'},403);
+ const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';const bytes=crypto.getRandomValues(new Uint8Array(8));const code=Array.from(bytes,b=>alphabet[b%alphabet.length]).join('');const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata'}).format(new Date());const expires=new Date(Date.now()+24*60*60*1000).toISOString();const admin=createClient(url,service);
+ const {error}=await admin.from('attendance_daily_codes').upsert({restaurant_id:p.restaurant_id,code_hash:await hash(code),work_date:today,expires_at:expires,is_active:true,created_by:user.id},{onConflict:'restaurant_id,work_date'});if(error)throw error;return json({code,work_date:today,expires_at:expires});
+ }catch(e){return json({error:e.message||'Could not generate attendance code.'},400)}});
