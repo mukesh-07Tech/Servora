@@ -75,6 +75,7 @@ export function CustomerDashboardPage({
   // Live order state - dynamic from database
   const [activeOrder, setActiveOrder] = useState<any | null>(null);
   const [activeOrderItems, setActiveOrderItems] = useState<any[]>([]);
+  const [activeOrdersList, setActiveOrdersList] = useState<any[]>([]);
 
   // Historical data
   const [pastOrders, setPastOrders] = useState<any[]>([]);
@@ -121,7 +122,16 @@ export function CustomerDashboardPage({
       let foundOrder: any = null;
       let orderList: any[] = [];
 
-      // 1. If we have a direct active order from recent dine-in session, load it first
+      // Helper to check if an order is paid
+      const isOrderSettledPaid = (o: any) => {
+        if (!o) return false;
+        const localPaid = localStorage.getItem(`servora_order_paid_${o.id}`) === 'paid';
+        const remotePaid = o.payment_status === 'paid' || o.status === 'completed';
+        return localPaid || remotePaid;
+      };
+
+      // 1. If we have a direct active order from recent dine-in session, load it
+      let directStoredOrder: any = null;
       if (storedOrderId) {
         let sOrder: any = null;
 
@@ -153,29 +163,28 @@ export function CustomerDashboardPage({
           if (localStorage.getItem(`servora_order_paid_${sOrder.id}`) === 'paid') {
             sOrder.payment_status = 'paid';
           }
-          foundOrder = sOrder;
-          orderList = [sOrder];
-          setActiveOrder(sOrder);
-          setActiveOrderItems(sOrder.order_items || []);
+          directStoredOrder = sOrder;
+          orderList.push(sOrder);
         }
       }
 
       // 1b. Try by stored order number
-      if (!foundOrder && storedNum && !isNaN(Number(storedNum))) {
+      if (!directStoredOrder && storedNum && !isNaN(Number(storedNum))) {
         const { data: numOrder } = await supabase
           .from('orders')
           .select('*, order_items(*)')
           .eq('order_number', Number(storedNum))
           .maybeSingle();
         if (numOrder) {
-          foundOrder = numOrder;
-          orderList = [numOrder];
-          setActiveOrder(numOrder);
-          setActiveOrderItems(numOrder.order_items || []);
+          if (localStorage.getItem(`servora_order_paid_${numOrder.id}`) === 'paid') {
+            numOrder.payment_status = 'paid';
+          }
+          directStoredOrder = numOrder;
+          orderList.push(numOrder);
         }
       }
 
-      // 2. Query orders for customer phone if available
+      // 2. Query all orders for customer phone if available
       if (phoneDigits && phoneDigits.length >= 10 && phoneDigits !== '9876543210') {
         const { data: ordersData } = await supabase
           .from('orders')
@@ -184,35 +193,66 @@ export function CustomerDashboardPage({
           .order('created_at', { ascending: false });
 
         if (ordersData && ordersData.length > 0) {
-          orderList = ordersData;
-          if (!foundOrder) {
-            const current = ordersData.find(o => o.status !== 'completed' && o.status !== 'cancelled') || ordersData[0];
-            foundOrder = current;
-            setActiveOrder(current);
-            setActiveOrderItems(current.order_items || []);
+          // Sync local paid status for each
+          ordersData.forEach(o => {
+            if (localStorage.getItem(`servora_order_paid_${o.id}`) === 'paid') {
+              o.payment_status = 'paid';
+            }
+          });
+          // Merge avoiding duplicates
+          const seen = new Set(orderList.map(o => o.id));
+          for (const ord of ordersData) {
+            if (!seen.has(ord.id)) {
+              seen.add(ord.id);
+              orderList.push(ord);
+            }
           }
         }
       }
 
-      // 3. Fallback to table active order if still not found
-      if (!foundOrder && storedTable) {
+      // 3. Fallback to table active order if still empty
+      if (orderList.length === 0 && storedTable) {
         const { data: tableOrders } = await supabase
           .from('orders')
           .select('*, order_items(*)')
           .ilike('table_label', `%${storedTable}%`)
           .not('status', 'in', '(completed,cancelled)')
           .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (tableOrders) {
-          foundOrder = tableOrders;
-          orderList = [tableOrders];
-          setActiveOrder(tableOrders);
-          setActiveOrderItems(tableOrders.order_items || []);
+          .limit(5);
+        if (tableOrders && tableOrders.length > 0) {
+          tableOrders.forEach(o => {
+            if (localStorage.getItem(`servora_order_paid_${o.id}`) === 'paid') {
+              o.payment_status = 'paid';
+            }
+            orderList.push(o);
+          });
         }
       }
 
+      // All past orders history (including paid and completed)
       setPastOrders(orderList);
+
+      // Active / Ongoing orders: MUST NOT be paid, MUST NOT be cancelled, and MUST NOT be completed
+      const activeUnpaidOrders = orderList.filter(o => {
+        const isPaid = isOrderSettledPaid(o);
+        const st = String(o.status || '').toLowerCase();
+        return !isPaid && st !== 'cancelled' && st !== 'completed';
+      });
+
+      setActiveOrdersList(activeUnpaidOrders);
+
+      // Select which active order to show in detail
+      if (activeUnpaidOrders.length > 0) {
+        // Keep currently viewed order if it's still in active list, else pick the first active unpaid
+        const stillActive = activeOrder ? activeUnpaidOrders.find(o => o.id === activeOrder.id) : null;
+        foundOrder = stillActive || activeUnpaidOrders[0];
+        setActiveOrder(foundOrder);
+        setActiveOrderItems(foundOrder.order_items || []);
+      } else {
+        // No active unpaid orders
+        setActiveOrder(null);
+        setActiveOrderItems([]);
+      }
 
       if (foundOrder) {
         if (foundOrder.status === 'cancelled') {
@@ -234,13 +274,6 @@ export function CustomerDashboardPage({
             }
           }
         }
-      }
-
-      // If no order is found at all, show the empty state cleanly
-      if (!foundOrder) {
-        setActiveOrder(null);
-        setActiveOrderItems([]);
-        setPastOrders([]);
       }
 
       // Fetch bills matching customer orders
@@ -443,8 +476,10 @@ export function CustomerDashboardPage({
             }}
           >
             <Activity size={18} className="nav-item-icon" />
-            <span className="nav-item-text">Live Order Tracker</span>
-            {activeOrder && activeOrder.status !== 'completed' && (
+            <span className="nav-item-text">
+              Live Order Tracker {activeOrdersList.length > 0 ? `(${activeOrdersList.length})` : ''}
+            </span>
+            {activeOrdersList.length > 0 && (
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 8px #22c55e', marginLeft: 'auto' }} />
             )}
           </button>
@@ -623,6 +658,86 @@ export function CustomerDashboardPage({
             ======================================================== */}
         {activeTab === 'tracker' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+            {/* Multiple Active Orders Switcher Strip */}
+            {activeOrdersList.length > 1 && (
+              <div
+                style={{
+                  background: '#ffffff',
+                  borderRadius: '16px',
+                  padding: '14px 18px',
+                  border: '1.5px solid #fed7aa',
+                  boxShadow: '0 2px 10px rgba(234, 88, 12, 0.06)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 8px #22c55e' }} />
+                    <span style={{ fontSize: 13, fontWeight: 800, color: '#3b1e10', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Active Orders In Progress ({activeOrdersList.length})
+                    </span>
+                  </div>
+                  <small style={{ color: '#8a6452', fontSize: 12 }}>
+                    Click an order below to track its live status
+                  </small>
+                </div>
+
+                <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
+                  {activeOrdersList.map(ord => {
+                    const isSelected = activeOrder?.id === ord.id;
+                    const st = String(ord.status || 'received').toLowerCase();
+                    const statusLabel = st.replace(/_/g, ' ').toUpperCase();
+                    return (
+                      <button
+                        key={ord.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveOrder(ord);
+                          setActiveOrderItems(ord.order_items || []);
+                        }}
+                        style={{
+                          flex: '0 0 auto',
+                          padding: '10px 16px',
+                          borderRadius: 12,
+                          background: isSelected ? 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)' : '#fffaf5',
+                          color: isSelected ? '#ffffff' : '#451a03',
+                          border: isSelected ? '1.5px solid #ea580c' : '1.5px solid #fed7aa',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 12,
+                          boxShadow: isSelected ? '0 4px 12px rgba(234, 88, 12, 0.3)' : 'none',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <div style={{ textAlign: 'left' }}>
+                          <div style={{ fontSize: 14, fontWeight: 800 }}>
+                            Order #{ord.order_number ? `SVR${ord.order_number}` : String(ord.id).slice(-4).toUpperCase()}
+                          </div>
+                          <div style={{ fontSize: 11, opacity: 0.9, marginTop: 2 }}>
+                            Table {ord.table_label || '—'} &bull; {ord.created_at ? new Date(ord.created_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase() : ''}
+                          </div>
+                        </div>
+
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 800,
+                            padding: '3px 8px',
+                            borderRadius: 6,
+                            background: isSelected ? 'rgba(255,255,255,0.22)' : '#ffedd5',
+                            color: isSelected ? '#ffffff' : '#c2410c',
+                            textTransform: 'uppercase'
+                          }}
+                        >
+                          {statusLabel}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {!activeOrder ? (
               <div
                 style={{
