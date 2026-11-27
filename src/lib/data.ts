@@ -33,7 +33,7 @@ try {
       }
     });
   }
-} catch {}
+} catch { }
 
 export function getCached<T>(key: string, maxAgeMs = CACHE_TTL_MS): T | null {
   const mem = MEM_CACHE.get(key);
@@ -94,7 +94,7 @@ export function invalidateCache(key?: string): void {
           MEM_CACHE.delete('orders_all');
         }
       }
-    } catch {}
+    } catch { }
   } else {
     MEM_CACHE.clear();
     try {
@@ -106,7 +106,7 @@ export function invalidateCache(key?: string): void {
         }
         keysToRemove.forEach(k => localStorage.removeItem(k));
       }
-    } catch {}
+    } catch { }
   }
 }
 
@@ -212,7 +212,7 @@ export async function getMenu(includeUnavailable = false, forceRefresh = false) 
     if (!mem || Date.now() - mem.timestamp > BG_STALE_MS) {
       fetchMenuFromDb(includeUnavailable).then(fresh => {
         if (fresh && fresh.length > 0) setCached(cacheKey, fresh);
-      }).catch(() => {});
+      }).catch(() => { });
     }
     return cached;
   }
@@ -264,7 +264,7 @@ export async function getOrders(opts: { activeOnly?: boolean } = {}, forceRefres
           setCached(cacheKey, fresh);
           if (!opts.activeOnly) setCached('orders_all', fresh);
         }
-      }).catch(() => {});
+      }).catch(() => { });
     }
     return cached;
   }
@@ -316,10 +316,10 @@ async function fetchOrdersFromDb(opts: { activeOnly?: boolean } = {}) {
       let unit = Number(it.unit_price) || 0;
       if (unit <= 0) {
         unit = (it.menu_item_id && priceMap.get(it.menu_item_id)) ||
-               (it.item_name && priceMap.get(it.item_name.trim().toLowerCase())) ||
-               lookupMenuItemPrice(it.menu_item_id, cachedMenu) ||
-               lookupMenuItemPrice(it.item_name, cachedMenu) ||
-               0;
+          (it.item_name && priceMap.get(it.item_name.trim().toLowerCase())) ||
+          lookupMenuItemPrice(it.menu_item_id, cachedMenu) ||
+          lookupMenuItemPrice(it.item_name, cachedMenu) ||
+          0;
       }
       let line = Number(it.line_total) || 0;
       if (line <= 0) {
@@ -363,7 +363,7 @@ export async function getTables(forceRefresh = false) {
     if (!mem || Date.now() - mem.timestamp > BG_STALE_MS) {
       fetchTablesFromDb().then(fresh => {
         if (fresh && fresh.length > 0) setCached('tables', fresh);
-      }).catch(() => {});
+      }).catch(() => { });
     }
     return cached;
   }
@@ -396,7 +396,7 @@ export async function getCustomers(forceRefresh = false) {
     if (!mem || Date.now() - mem.timestamp > BG_STALE_MS) {
       fetchCustomersFromDb().then(fresh => {
         if (fresh !== null && fresh !== undefined) setCached('customers', fresh);
-      }).catch(() => {});
+      }).catch(() => { });
     }
     return cached;
   }

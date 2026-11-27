@@ -6184,6 +6184,41 @@ function CustomerPage({
       .catch(() => { });
   }, [table, tableToken]);
 
+  function startFreshBooking(keepTable = false) {
+    try {
+      localStorage.removeItem('servora_active_order_id');
+      localStorage.removeItem('servora_active_order_token');
+      localStorage.removeItem('servora_active_order_num');
+      if (order?.id) {
+        localStorage.removeItem(`servora_cancel_req_${order.id}`);
+        localStorage.removeItem(`servora_order_paid_${order.id}`);
+        localStorage.removeItem(`servora_served_time_${order.id}`);
+      }
+      if (!keepTable) {
+        localStorage.removeItem('servora_active_order_table');
+        setTable('');
+        setTableToken('');
+        setTableState('none');
+      }
+    } catch { }
+
+    setOrder(null);
+    setLiveOrder(null);
+    setCart([]);
+    setCancellationRequested(false);
+    setCancellationRejected(false);
+
+    if (keepTable && table) {
+      // Stay on menu for the same table without requiring customer login
+      setCustomerReady(true);
+      notify(setNotice, `Ready for fresh booking at Table ${table}!`, 'success');
+    } else {
+      // Return to check-in/table selection without customer login
+      setCustomerReady(false);
+      notify(setNotice, 'Starting fresh booking. Please pick or scan your table to order.', 'info');
+    }
+  }
+
   function toggleTable(tblNumber: string) {
     if (table === tblNumber) {
       setTable('');
@@ -6918,11 +6953,63 @@ function CustomerPage({
 
                     if (isOrderPaid) {
                       return (
-                        <div style={{ marginTop: 14, background: '#dcfce7', border: '1.5px solid #86efac', borderRadius: 16, padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, color: '#15803d', fontWeight: 800 }}>
-                          <CheckCircle2 size={22} />
-                          <div>
-                            <div style={{ fontSize: 15 }}>Bill Paid &amp; Settled (₹{orderTotal.toFixed(2)})</div>
-                            <small style={{ fontWeight: 600, color: '#166534', display: 'block', marginTop: 2 }}>Thank you for dining with us at Servora!</small>
+                        <div style={{ marginTop: 14, background: '#f0fdf4', border: '1.5px solid #86efac', borderRadius: 16, padding: '16px 20px', boxShadow: '0 4px 15px rgba(22, 163, 74, 0.1)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, color: '#15803d', fontWeight: 800 }}>
+                            <CheckCircle2 size={24} />
+                            <div>
+                              <div style={{ fontSize: 16 }}>Bill Paid &amp; Settled (₹{orderTotal.toFixed(2)})</div>
+                              <small style={{ fontWeight: 600, color: '#166534', display: 'block', marginTop: 2 }}>Thank you for dining with us at Servora!</small>
+                            </div>
+                          </div>
+
+                          {/* Direct Fresh Booking / Next Order Buttons (No Login Needed) */}
+                          <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px dashed #bbf7d0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <button
+                              type="button"
+                              onClick={() => startFreshBooking(true)}
+                              style={{
+                                width: '100%',
+                                padding: '12px 16px',
+                                borderRadius: 12,
+                                background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                                color: '#ffffff',
+                                border: 'none',
+                                fontSize: 14,
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 8,
+                                boxShadow: '0 3px 10px rgba(22, 163, 74, 0.25)'
+                              }}
+                            >
+                              <Utensils size={16} />
+                              <span>Order More for Table {tableDisplay} (Fresh Booking)</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => startFreshBooking(false)}
+                              style={{
+                                width: '100%',
+                                padding: '10px 14px',
+                                borderRadius: 12,
+                                background: '#ffffff',
+                                color: '#4b5563',
+                                border: '1.5px solid #d1d5db',
+                                fontSize: 13,
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 6
+                              }}
+                            >
+                              <ArrowLeft size={15} />
+                              <span>Start Fresh Session / Pick New Table</span>
+                            </button>
                           </div>
                         </div>
                       );
@@ -7594,11 +7681,59 @@ function CustomerPage({
 
               if (isOrderPaid) {
                 return (
-                  <div style={{ marginTop: 14, background: '#dcfce7', border: '1.5px solid #86efac', borderRadius: 16, padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, color: '#15803d', fontWeight: 800 }}>
-                    <CheckCircle2 size={22} />
-                    <div>
-                      <div style={{ fontSize: 15 }}>Bill Paid &amp; Settled (₹{orderTotal.toFixed(2)})</div>
-                      <small style={{ fontWeight: 600, color: '#166534', display: 'block', marginTop: 2 }}>Thank you for dining with us at Servora!</small>
+                  <div style={{ marginTop: 14, background: '#dcfce7', border: '1.5px solid #86efac', borderRadius: 16, padding: '16px 20px', color: '#15803d' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontWeight: 800 }}>
+                      <CheckCircle2 size={22} />
+                      <div>
+                        <div style={{ fontSize: 15 }}>Bill Paid &amp; Settled (₹{orderTotal.toFixed(2)})</div>
+                        <small style={{ fontWeight: 600, color: '#166534', display: 'block', marginTop: 2 }}>Thank you for dining with us at Servora!</small>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px dashed #86efac', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => startFreshBooking(true)}
+                        style={{
+                          width: '100%',
+                          background: '#16a34a',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: 10,
+                          padding: '10px 14px',
+                          fontSize: 13,
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 6,
+                          boxShadow: '0 2px 8px rgba(22, 163, 74, 0.25)'
+                        }}
+                      >
+                        <Utensils size={16} /> Order More for Table {tableDisplay} (Fresh Booking)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => startFreshBooking(false)}
+                        style={{
+                          width: '100%',
+                          background: '#fff',
+                          color: '#15803d',
+                          border: '1.5px solid #86efac',
+                          borderRadius: 10,
+                          padding: '8px 12px',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 6
+                        }}
+                      >
+                        <RefreshCw size={14} /> Start Fresh Session / Pick New Table
+                      </button>
                     </div>
                   </div>
                 );

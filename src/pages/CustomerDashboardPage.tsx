@@ -1236,23 +1236,55 @@ export function CustomerDashboardPage({
                               </button>
                             );
                           })() : (
-                            <div
-                              style={{
-                                marginTop: '14px',
-                                padding: '10px 14px',
-                                borderRadius: '10px',
-                                background: '#dcfce7',
-                                color: '#16a34a',
-                                fontWeight: 800,
-                                fontSize: '13px',
-                                textAlign: 'center',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '6px'
-                              }}
-                            >
-                              <CheckCircle2 size={16} /> Bill Paid &amp; Settled
+                            <div>
+                              <div
+                                style={{
+                                  marginTop: '14px',
+                                  padding: '10px 14px',
+                                  borderRadius: '10px',
+                                  background: '#dcfce7',
+                                  color: '#16a34a',
+                                  fontWeight: 800,
+                                  fontSize: '13px',
+                                  textAlign: 'center',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '6px'
+                                }}
+                              >
+                                <CheckCircle2 size={16} /> Bill Paid &amp; Settled
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  try {
+                                    localStorage.removeItem('servora_active_order_id');
+                                    localStorage.removeItem('servora_active_order_token');
+                                    localStorage.removeItem('servora_active_order_num');
+                                    localStorage.removeItem('servora_active_order_table');
+                                  } catch { }
+                                  window.location.href = '/order';
+                                }}
+                                style={{
+                                  marginTop: '8px',
+                                  width: '100%',
+                                  padding: '10px 14px',
+                                  borderRadius: '10px',
+                                  background: '#16a34a',
+                                  color: '#fff',
+                                  border: 'none',
+                                  fontWeight: 800,
+                                  fontSize: '13px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '6px',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                <Utensils size={15} /> Start Fresh Dine-In Order →
+                              </button>
                             </div>
                           )}
 
