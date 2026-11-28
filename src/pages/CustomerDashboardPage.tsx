@@ -136,8 +136,16 @@ export function CustomerDashboardPage({
       let foundOrder: any = null;
       let orderList: any[] = [];
 
-      // 1. Load every order placed from this browser. Each order carries its own access token,
-      //    so the server only returns orders this diner is entitled to see.
+      // 1. Load orders belonging to this verified phone number from the server
+      const phoneOrders = await getCustomerOrders();
+      if (phoneOrders === null) {
+        if (setNotice) setNotice({ text: 'Your session has expired. Please sign in again.', kind: 'info' });
+        nav('/customer-login', { replace: true });
+        return;
+      }
+      orderList = [...phoneOrders];
+
+      // 2. Also check local orders placed from this browser session, strictly matching this customer's phone
       let directStoredOrder: any = null;
       if (storedActiveOrderId && localStorage.getItem('servora_active_order_token')) {
         rememberMyOrder({
@@ -149,25 +157,32 @@ export function CustomerDashboardPage({
       }
       const myOrders = await getMyOrders();
       for (const sOrder of myOrders) {
-        if (!orderList.some(o => o.id === sOrder.id)) orderList.push(sOrder);
-      }
-      // 2. Every order for the verified phone number, from any device (server checks the login session)
-      const phoneOrders = await getCustomerOrders();
-      if (phoneOrders === null) {
-        if (setNotice) setNotice({ text: 'Your session has expired. Please sign in again.', kind: 'info' });
-        nav('/customer-login', { replace: true });
-        return;
-      }
-      for (const sOrder of phoneOrders) {
-        const at = orderList.findIndex(o => o.id === sOrder.id);
-        if (at >= 0) orderList[at] = sOrder; else orderList.push(sOrder);
+        const orderPhone = (sOrder.customer_phone || '').replace(/\D/g, '').slice(-10);
+        if (!orderPhone || orderPhone === phoneDigits) {
+          const at = orderList.findIndex(o => o.id === sOrder.id);
+          if (at >= 0) {
+            orderList[at] = { ...orderList[at], ...sOrder };
+          } else if (orderPhone === phoneDigits) {
+            orderList.push(sOrder);
+          }
+        }
       }
       if (storedActiveOrderId) directStoredOrder = orderList.find(o => o.id === storedActiveOrderId) || null;
-      void phoneDigits;
 
-      // Always retain currently viewed activeOrder if present in state
+      // Retain currently viewed activeOrder ONLY if it matches this customer's phone
       if (activeOrder && !orderList.some(o => o.id === activeOrder.id)) {
-        orderList.push(activeOrder);
+        const activeOrderPhone = (activeOrder.customer_phone || '').replace(/\D/g, '').slice(-10);
+        if (!activeOrderPhone || activeOrderPhone === phoneDigits) {
+          orderList.push(activeOrder);
+        }
+      }
+
+      // Final strict filter: every order shown must belong to this customer
+      if (phoneDigits) {
+        orderList = orderList.filter(o => {
+          const p = (o.customer_phone || '').replace(/\D/g, '').slice(-10);
+          return !p || p === phoneDigits;
+        });
       }
 
       // ALWAYS sort orderList consistently by created_at descending, then order_number descending
@@ -206,7 +221,7 @@ export function CustomerDashboardPage({
 
         if (userTarget) {
           const targetStr = String(userTarget).trim().toLowerCase();
-          matchedOrder = activeUnpaidOrders.find(o => 
+          matchedOrder = activeUnpaidOrders.find(o =>
             (o.id && String(o.id).toLowerCase() === targetStr) ||
             (o.order_number && (
               String(o.order_number) === targetStr ||
@@ -258,7 +273,7 @@ export function CustomerDashboardPage({
         // Only clear user pin if the pinned order has actually been paid or completed or cancelled in orderList
         const currentTarget = userPinnedOrderKeyRef.current || localStorage.getItem('servora_selected_order_id');
         const targetStr = currentTarget ? String(currentTarget).trim().toLowerCase() : '';
-        const orderInHistory = targetStr ? orderList.find(o => 
+        const orderInHistory = targetStr ? orderList.find(o =>
           (o.id && String(o.id).toLowerCase() === targetStr) ||
           (o.order_number && (String(o.order_number) === targetStr || `svr${o.order_number}`.toLowerCase() === targetStr || `#svr${o.order_number}`.toLowerCase() === targetStr))
         ) : null;
@@ -806,12 +821,12 @@ export function CustomerDashboardPage({
                   You do not have any ongoing dine-in orders at this moment. Browse our freshly prepared menu to place an order!
                 </p>
                 <button
-              type="button"
-              onClick={() => setShowOrderMore(true)}
+                  type="button"
+                  onClick={() => setShowOrderMore(true)}
                   style={{
-                border: 'none',
-                cursor: 'pointer',
-                font: 'inherit',
+                    border: 'none',
+                    cursor: 'pointer',
+                    font: 'inherit',
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '8px',
@@ -865,12 +880,12 @@ export function CustomerDashboardPage({
                   Table {activeOrder.table_label || 'T01'} was freed and all ordered items voided. No bills or charges have been incurred.
                 </div>
                 <button
-              type="button"
-              onClick={() => setShowOrderMore(true)}
+                  type="button"
+                  onClick={() => setShowOrderMore(true)}
                   style={{
-                border: 'none',
-                cursor: 'pointer',
-                font: 'inherit',
+                    border: 'none',
+                    cursor: 'pointer',
+                    font: 'inherit',
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '8px',

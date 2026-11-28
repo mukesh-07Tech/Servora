@@ -391,11 +391,11 @@ async function fetchTablesFromDb() {
 
 export async function getCustomers(forceRefresh = false) {
   const cached = getCached<any[]>('customers');
-  if (cached && !forceRefresh) {
+  if (cached && cached.length > 0 && !forceRefresh) {
     const mem = MEM_CACHE.get('customers');
     if (!mem || Date.now() - mem.timestamp > BG_STALE_MS) {
       fetchCustomersFromDb().then(fresh => {
-        if (fresh !== null && fresh !== undefined) setCached('customers', fresh);
+        if (fresh && fresh.length > 0) setCached('customers', fresh);
       }).catch(() => { });
     }
     return cached;
@@ -405,7 +405,7 @@ export async function getCustomers(forceRefresh = false) {
 
   try {
     const fresh = await fetchCustomersFromDb();
-    if (fresh !== null && fresh !== undefined) {
+    if (fresh && fresh.length > 0) {
       setCached('customers', fresh);
       return fresh;
     }
@@ -418,8 +418,81 @@ export async function getCustomers(forceRefresh = false) {
 async function fetchCustomersFromDb() {
   if (!supabase) return [];
   const { data, error } = await supabase.from('customer_profiles').select('*').order('created_at', { ascending: false });
-  if (error) return [];
-  return data || [];
+  const profiles = Array.isArray(data) ? [...data] : [];
+
+  // Also query recent orders to accurately compute spent, visits and capture any new dine-in customer
+  try {
+    const { data: ords } = await supabase
+      .from('orders')
+      .select('customer_name, customer_phone, total, status, payment_status, created_at, restaurant_id')
+      .not('customer_phone', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(300);
+
+    if (Array.isArray(ords)) {
+      // Build aggregations per 10-digit phone
+      const orderAgg = new Map<string, { totalSpent: number; visits: number; lastVisit: string; name: string }>();
+      for (const o of ords) {
+        const clean = (o.customer_phone || '').replace(/\D/g, '').slice(-10);
+        if (clean.length !== 10) continue;
+        const prev = orderAgg.get(clean) || { totalSpent: 0, visits: 0, lastVisit: '', name: '' };
+        prev.visits += 1;
+        const st = (o.status || '').toLowerCase();
+        if (st !== 'cancelled') {
+          prev.totalSpent += Number(o.total || 0);
+        }
+        if (!prev.lastVisit || (o.created_at && o.created_at > prev.lastVisit)) {
+          prev.lastVisit = o.created_at;
+        }
+        if ((!prev.name || prev.name === 'Dine-in Guest') && o.customer_name) {
+          prev.name = o.customer_name.trim();
+        }
+        orderAgg.set(clean, prev);
+      }
+
+      // Update existing profiles with accurate aggregate numbers if orderAgg has them
+      const knownPhones = new Set<string>();
+      for (const p of profiles) {
+        const clean = (p.phone || '').replace(/\D/g, '').slice(-10);
+        if (clean) {
+          knownPhones.add(clean);
+          const agg = orderAgg.get(clean);
+          if (agg) {
+            p.visits = Math.max(Number(p.visits) || 0, agg.visits);
+            p.total_spent = Math.max(Number(p.total_spent) || 0, agg.totalSpent);
+            if (agg.lastVisit && (!p.last_visit || agg.lastVisit > p.last_visit)) {
+              p.last_visit = agg.lastVisit;
+            }
+            if ((!p.full_name || p.full_name === 'Dine-in Guest') && agg.name) {
+              p.full_name = agg.name;
+            }
+          }
+        }
+      }
+
+      // Add any customer from orders that is not yet in profiles
+      for (const [phone, agg] of orderAgg.entries()) {
+        if (!knownPhones.has(phone)) {
+          knownPhones.add(phone);
+          profiles.unshift({
+            id: `order-cust-${phone}`,
+            restaurant_id: 'a0000000-0000-0000-0000-000000000001',
+            phone: phone,
+            full_name: agg.name || 'Dine-in Guest',
+            created_at: agg.lastVisit || new Date().toISOString(),
+            visits: agg.visits || 1,
+            total_spent: agg.totalSpent || 0,
+            status: agg.visits >= 5 ? 'Loyal' : 'New',
+            last_visit: agg.lastVisit || new Date().toISOString()
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Could not merge orders into customer profiles:', err);
+  }
+
+  return profiles;
 }
 
 export async function getStaffList(forceRefresh = false) {
@@ -533,6 +606,8 @@ export async function updateOrderPaymentStatus(
       invalidateCache('orders');
       invalidateCache('orders_all');
       invalidateCache('orders_active');
+      invalidateCache('tables');
+      invalidateCache('dining_tables');
       return rpcRes;
     }
   } catch (e) {
@@ -556,9 +631,30 @@ export async function updateOrderPaymentStatus(
   }
   if (error) throw error;
 
+  // If order is paid, make sure the table status is also updated to 'available'
+  if (paymentStatus === 'paid') {
+    try {
+      const ord = (data && data[0]) ? data[0] : null;
+      if (ord?.table_label) {
+        const rawTbl = String(ord.table_label).trim();
+        const digits = rawTbl.replace(/\D/g, '');
+        const cleanTbl = digits ? `T${digits.padStart(2, '0')}` : rawTbl;
+        await supabase
+          .from('dining_tables')
+          .update({ status: 'available', current_order_id: null, updated_at: new Date().toISOString() })
+          .or(`table_number.eq.${cleanTbl},table_number.eq.${rawTbl}`);
+      }
+    } catch (tblErr) {
+      console.warn('Could not update dining table to available directly:', tblErr);
+    }
+  }
+
   invalidateCache('orders');
   invalidateCache('orders_all');
   invalidateCache('orders_active');
+  invalidateCache('tables');
+  invalidateCache('dining_tables');
+  invalidateCache('customers');
   return data;
 }
 
@@ -812,9 +908,26 @@ export async function getOrderCancellationStatus(orderId: string, accessToken: s
   return { status: (data.status || 'none') as CancellationStatus, reason: data.reason, decisionNote: data.decision_note };
 }
 
-/** Staff (kitchen, billing counter, admin): requests waiting for a decision. */
+/** Staff (kitchen, billing counter, admin): requests waiting for a decision.
+ *  Uses an RPC function (security definer) so the query bypasses RLS issues
+ *  that can silently return zero rows when the table-level policy is not met. */
 export async function getPendingCancellationRequests(): Promise<CancellationRequestInfo[]> {
   if (!supabase) return [];
+  // Try the RPC first (guaranteed to work for authenticated staff)
+  const { data: rpcData, error: rpcError } = await supabase.rpc('get_pending_cancel_requests');
+  if (!rpcError && Array.isArray(rpcData)) {
+    return rpcData.map((r: any) => ({
+      id: r.id,
+      orderId: r.order_id,
+      orderNumber: r.order_number ?? '',
+      tableLabel: r.table_label || '-',
+      customerName: r.customer_name || 'Guest',
+      reason: r.reason || 'Customer requested cancellation',
+      status: r.status || 'pending',
+      createdAt: r.created_at
+    }));
+  }
+  // Fallback: direct table read (works when RLS policy is in place)
   const { data, error } = await supabase
     .from('order_cancel_requests')
     .select('id, order_id, order_number, table_label, customer_name, reason, status, created_at')
@@ -842,6 +955,7 @@ async function decideCancellation(requestId: string, approve: boolean, note?: st
   invalidateCache('orders');
   invalidateCache('orders_all');
   invalidateCache('orders_active');
+  invalidateCache('tables');
   invalidateCache('dining_tables');
 }
 
@@ -867,7 +981,9 @@ export async function settleTableBill(orderIds: string[], paymentMode: string, d
   invalidateCache('orders');
   invalidateCache('orders_all');
   invalidateCache('orders_active');
+  invalidateCache('tables');
   invalidateCache('dining_tables');
+  invalidateCache('customers');
   return data as { success: boolean; bill_number: number; subtotal: number; tax: number; discount: number; total: number };
 }
 
@@ -946,7 +1062,7 @@ export function clearCustomerSession() {
   } catch { }
 }
 
-export async function requestCustomerOtp(phone: string): Promise<{ sent: boolean; test_otp?: string; expires_in?: number }> {
+export async function requestCustomerOtp(phone: string): Promise<{ sent: boolean; test_otp?: string; expires_in?: number; name?: string }> {
   if (!supabase) throw new Error('The service is not configured.');
   const { data, error } = await supabase.rpc('request_customer_otp', { p_phone: phone });
   if (error) throw friendlyDbError(error, 'Could not send the verification code.');

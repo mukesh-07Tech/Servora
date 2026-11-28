@@ -19,7 +19,7 @@ import {
   Users,
   Utensils
 } from 'lucide-react';
-import { DEFAULT_TABLES, getCached, getOrders, getTables } from '../lib/data';
+import { DEFAULT_TABLES, getCached, getOrders, getTables, matchTableLabels } from '../lib/data';
 import { money, supabase } from '../lib/supabase';
 
 export function DashboardOverview() {
@@ -68,27 +68,47 @@ export function DashboardOverview() {
   }, []);
 
   // Compute live metrics directly from DB
-  const totalOrdersCount = orders.length;
-  const totalRevenueVal = orders.reduce((acc, o) => acc + Number(o.total || 0), 0);
+  const validOrders = useMemo(() => orders.filter(o => (o.status || '').toLowerCase() !== 'cancelled'), [orders]);
+  const totalOrdersCount = validOrders.length;
 
-  // Active tables: tables marked occupied OR currently having an ongoing order in kitchen/service
-  const activeOrderTableLabels = useMemo(() => {
-    return new Set(
-      orders
-        .filter(o => !['served', 'completed', 'cancelled'].includes((o.status || '').toLowerCase()))
-        .map(o => (o.table_label || '').trim().toUpperCase())
-    );
+  // Total Revenue: strictly counts paid and completed orders
+  const paidOrders = useMemo(() => {
+    return orders.filter(o => {
+      const st = (o.status || '').toLowerCase();
+      const ps = (o.payment_status || '').toLowerCase();
+      return st !== 'cancelled' && (ps === 'paid' || st === 'completed');
+    });
   }, [orders]);
+  const totalRevenueVal = useMemo(() => {
+    return paidOrders.reduce((acc, o) => acc + Number(o.total || 0), 0);
+  }, [paidOrders]);
 
+  // Active tables: tables marked occupied OR having an ongoing unpaid order (including food served, waiting for bill)
   const isTableOccupied = (t: any) => {
-    const num = (t.table_number || '').trim().toUpperCase();
-    return activeOrderTableLabels.has(num);
+    const st = (t.status || '').toLowerCase();
+    // 1. Explicitly occupied/busy in dining_tables
+    if (['occupied', 'busy', 'ordering', 'seated', 'bill_requested'].includes(st)) {
+      return true;
+    }
+    // 2. Active unpaid order assigned to this table
+    return orders.some(o => {
+      const ordSt = (o.status || '').toLowerCase();
+      const ps = (o.payment_status || '').toLowerCase();
+      if (ordSt === 'cancelled' || ps === 'paid') return false;
+      return matchTableLabels(o.table_label, t.table_number);
+    });
   };
 
   const occupiedTablesCount = tables.filter(isTableOccupied).length;
-  const totalTablesCount = tables.length;
+  const totalTablesCount = tables.length || 20;
   const occupancyPercent = totalTablesCount > 0 ? Math.round((occupiedTablesCount / totalTablesCount) * 100) : 0;
-  const totalGuests = orders.reduce((acc, o) => acc + Number(o.guests || 2), 0);
+
+  // Today's guests count from orders created today
+  const totalGuests = useMemo(() => {
+    const todayStr = new Date().toDateString();
+    const todayList = validOrders.filter(o => o.created_at && new Date(o.created_at).toDateString() === todayStr);
+    return todayList.reduce((acc, o) => acc + Number(o.guests || o.dining_sessions?.persons || 2), 0);
+  }, [validOrders]);
 
   // Active live orders for current kitchen queue
   const displayQueue = orders.filter(o => !['served', 'completed', 'cancelled'].includes((o.status || '').toLowerCase())).slice(0, 5);
@@ -102,13 +122,21 @@ export function DashboardOverview() {
     let buckets: { label: string; start: Date; end: Date }[] = [];
 
     if (salesTimeframe === 'today') {
-      // 12 hours from 9 AM to 8 PM
-      const hours = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
-      buckets = hours.map(h => {
+      // 8 slots covering the entire 24 hours of today (8 AM, 10 AM, 12 PM, 2 PM, 4 PM, 6 PM, 8 PM, 10 PM)
+      const hours = [8, 10, 12, 14, 16, 18, 20, 22];
+      buckets = hours.map((h, i) => {
         const start = new Date(now);
-        start.setHours(h, 0, 0, 0);
+        if (i === 0) {
+          start.setHours(0, 0, 0, 0); // Include early morning sales before 8 AM
+        } else {
+          start.setHours(h, 0, 0, 0);
+        }
         const end = new Date(now);
-        end.setHours(h + 1, 0, 0, 0);
+        if (i === hours.length - 1) {
+          end.setHours(23, 59, 59, 999); // Include late night sales until 23:59:59
+        } else {
+          end.setHours(h + 2, 0, 0, 0);
+        }
         const label = `${h > 12 ? h - 12 : h} ${h >= 12 ? 'PM' : 'AM'}`;
         return { label, start, end };
       });
@@ -141,8 +169,16 @@ export function DashboardOverview() {
 
     const points = buckets.map((b, idx) => {
       const matched = orders.filter(o => {
-        if (!o.created_at) return false;
-        const od = new Date(o.created_at);
+        const st = (o.status || '').toLowerCase();
+        const ps = (o.payment_status || '').toLowerCase();
+        // Never include cancelled orders in revenue
+        if (st === 'cancelled') return false;
+        // Strictly include paid or completed orders
+        if (ps !== 'paid' && st !== 'completed') return false;
+
+        const dStr = o.updated_at || o.created_at;
+        if (!dStr) return false;
+        const od = new Date(dStr);
         return od >= b.start && od <= b.end;
       });
       const revenue = matched.reduce((sum, o) => sum + Number(o.total || 0), 0);
@@ -206,10 +242,36 @@ export function DashboardOverview() {
       {/* 1. Hero Greeting Banner */}
       <div className="dash-hero-banner">
         <div className="dash-hero-content">
-          <h2 className="dash-hero-title">
-            Good Day, Admin <Sparkles size={20} style={{ color: '#f59e0b', verticalAlign: 'middle', display: 'inline-block', marginLeft: 6 }} />
-          </h2>
-          <p className="dash-hero-sub">Here's what's happening at Servora right now.</p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <h2 className="dash-hero-title">
+                Good Day, Admin <Sparkles size={20} style={{ color: '#f59e0b', verticalAlign: 'middle', display: 'inline-block', marginLeft: 6 }} />
+              </h2>
+              <p className="dash-hero-sub">Here's what's happening at Servora right now.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => loadData(true)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 16px',
+                borderRadius: 12,
+                background: '#ffffff',
+                border: '1px solid #ebdcd0',
+                color: '#422116',
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
+              }}
+              title="Refresh Dashboard Overview"
+            >
+              <RefreshCw size={14} className={loading ? 'spin' : ''} />
+              <span>Reload</span>
+            </button>
+          </div>
         </div>
         <div className="dash-hero-bg-overlay" />
       </div>
@@ -545,7 +607,7 @@ export function DashboardOverview() {
           </div>
 
           <div className="tables-matrix-grid">
-            {tables.slice(0, 12).map((t, idx) => {
+            {tables.map((t, idx) => {
               const isOccupied = isTableOccupied(t);
               return (
                 <div key={t.id || idx} className={`table-tile ${isOccupied ? 'tile-occupied' : 'tile-available'}`}>

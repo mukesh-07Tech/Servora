@@ -119,7 +119,7 @@ export function CustomersPage({ setNotice, globalSearch }: { setNotice?: (n: any
   };
 
   useEffect(() => {
-    loadData();
+    loadData(true);
 
     const client = supabase;
     if (client) {
@@ -156,7 +156,14 @@ export function CustomersPage({ setNotice, globalSearch }: { setNotice?: (n: any
 
   // Metric computations from actual DB
   const totalCustomersCount = customers.length;
-  const newCustomersCount = customers.filter(c => (c.status || '').toLowerCase() === 'new').length;
+  const newCustomersCount = customers.filter(c => {
+    const st = (c.status || '').toLowerCase();
+    if (st === 'new') return true;
+    if (!c.created_at) return false;
+    const d = new Date(c.created_at);
+    const now = new Date();
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && (Number(c.visits) || 1) <= 3;
+  }).length;
   const loyalCustomersCount = customers.filter(c => ['loyal', 'vip'].includes((c.status || '').toLowerCase()) || (c.visits || 0) >= 5).length;
   const repeatRate = totalCustomersCount > 0 ? Math.round((loyalCustomersCount / totalCustomersCount) * 100) : 72;
 
@@ -363,6 +370,24 @@ export function CustomersPage({ setNotice, globalSearch }: { setNotice?: (n: any
         </div>
 
         <div className="actions-right customers-actions-right">
+          <button
+            type="button"
+            className="btn-export-customers"
+            onClick={() => loadData(true)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              background: '#ffffff',
+              border: '1px solid #ebdcd0',
+              color: '#422116',
+              fontWeight: 700
+            }}
+            title="Reload customers list directly from database"
+          >
+            <RefreshCw size={15} className={loading ? 'spin' : ''} /> <span>Reload</span>
+          </button>
+
           <button
             type="button"
             className="btn-export-customers"

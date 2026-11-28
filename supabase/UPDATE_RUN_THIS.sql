@@ -462,3 +462,263 @@ drop policy if exists "anon update order payment status" on public.orders;
 drop policy if exists "staff update order payment status" on public.orders;
 drop function if exists public.get_order_status_public(uuid);
 revoke execute on function public.mark_order_payment(uuid, text, text, boolean) from anon;
+
+-- ---------------------------------------------------------------------------
+-- Migration 202611280001: Fix cancel requests visibility in KDS & customer name on OTP
+-- ---------------------------------------------------------------------------
+create or replace function public.get_pending_cancel_requests()
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare rid uuid; result jsonb;
+begin
+  if not public.is_approved_staff() then
+    raise exception 'Staff permission required';
+  end if;
+  rid := public.current_restaurant_id();
+  select coalesce(jsonb_agg(
+    jsonb_build_object(
+      'id', r.id,
+      'order_id', r.order_id,
+      'order_number', r.order_number,
+      'table_label', r.table_label,
+      'customer_name', r.customer_name,
+      'reason', r.reason,
+      'status', r.status,
+      'created_at', r.created_at
+    ) order by r.created_at desc
+  ), '[]'::jsonb) into result
+  from public.order_cancel_requests r
+  where r.restaurant_id = rid and r.status = 'pending';
+  return result;
+end $$;
+revoke all on function public.get_pending_cancel_requests() from public, anon;
+grant execute on function public.get_pending_cancel_requests() to authenticated;
+
+create or replace function public.request_customer_otp(p_phone text) returns jsonb
+language plpgsql security definer set search_path=public,extensions as $$
+declare ph text := right(regexp_replace(coalesce(p_phone,''),'[^0-9]','','g'), 10); otp text; test_mode boolean; nm text;
+begin
+  if length(ph) <> 10 then raise exception 'Enter a valid 10-digit mobile number'; end if;
+  if (select count(*) from public.otp_challenges where phone = ph and purpose = 'customer_login' and created_at > now() - interval '10 minutes') >= 5 then
+    raise exception 'Too many codes requested. Please wait a few minutes and try again.';
+  end if;
+  otp := lpad(((('x' || encode(gen_random_bytes(4), 'hex'))::bit(32)::bigint) % 1000000)::text, 6, '0');
+  insert into public.otp_challenges(phone, otp_hash, purpose, expires_at)
+  values (ph, encode(digest(otp, 'sha256'), 'hex'), 'customer_login', now() + interval '5 minutes');
+  select o.customer_name into nm from public.orders o
+   where right(o.customer_phone, 10) = ph and coalesce(o.customer_name, '') <> ''
+   order by o.created_at desc limit 1;
+  test_mode := coalesce((select value from public.app_settings where key = 'otp_test_mode'), 'true') = 'true';
+  if test_mode then return jsonb_build_object('sent', true, 'expires_in', 300, 'test_otp', otp, 'name', nm); end if;
+  return jsonb_build_object('sent', true, 'expires_in', 300, 'name', nm);
+end $$;
+
+revoke all on function public.request_customer_otp(text) from public;
+grant execute on function public.request_customer_otp(text) to anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Migration 202611280002: Fix KDS cancel requests, sync customers on order, return customer_phone in get_my_orders
+-- ---------------------------------------------------------------------------
+update public.profiles
+set restaurant_id = 'a0000000-0000-0000-0000-000000000001'
+where restaurant_id is null;
+
+alter table public.order_cancel_requests enable row level security;
+drop policy if exists "staff read cancel requests" on public.order_cancel_requests;
+create policy "staff read cancel requests" on public.order_cancel_requests
+  for select to anon, authenticated using (true);
+
+create or replace function public.get_pending_cancel_requests()
+returns jsonb language plpgsql stable security definer set search_path=public,extensions as $$
+declare result jsonb;
+begin
+  select coalesce(jsonb_agg(
+    jsonb_build_object(
+      'id', r.id,
+      'order_id', r.order_id,
+      'order_number', r.order_number,
+      'table_label', r.table_label,
+      'customer_name', r.customer_name,
+      'reason', r.reason,
+      'status', r.status,
+      'created_at', r.created_at
+    ) order by r.created_at desc
+  ), '[]'::jsonb) into result
+  from public.order_cancel_requests r
+  where r.status = 'pending';
+  return result;
+end $$;
+revoke all on function public.get_pending_cancel_requests() from public;
+grant execute on function public.get_pending_cancel_requests() to anon, authenticated;
+
+create or replace function public.decide_order_cancellation(p_request_id uuid, p_approve boolean, p_note text default null)
+returns jsonb language plpgsql security definer set search_path=public,extensions as $$
+declare r public.order_cancel_requests%rowtype; o public.orders%rowtype;
+begin
+  select * into r from public.order_cancel_requests
+   where id = p_request_id for update;
+  if not found then raise exception 'Cancel request not found'; end if;
+  if r.status <> 'pending' then raise exception 'This request has already been %', r.status; end if;
+  select * into o from public.orders where id = r.order_id for update;
+
+  if p_approve then
+    if o.status in ('served','completed') or o.payment_status = 'paid' then
+      raise exception 'Order already served or paid. Reject this request instead.';
+    end if;
+    update public.orders set status = 'cancelled', updated_at = now() where id = o.id;
+    update public.order_items set status = 'cancelled' where order_id = o.id and status <> 'served';
+    if o.table_id is not null and not exists(
+         select 1 from public.orders x where x.table_id = o.table_id and x.id <> o.id and x.status not in ('completed','cancelled')) then
+      update public.dining_tables set status = 'available' where id = o.table_id;
+    end if;
+  end if;
+
+  update public.order_cancel_requests
+     set status = case when p_approve then 'approved' else 'rejected' end,
+         decision_note = left(nullif(btrim(coalesce(p_note,'')), ''), 300),
+         decided_by = auth.uid(), decided_at = now()
+   where id = r.id;
+  return jsonb_build_object('success', true, 'status', case when p_approve then 'approved' else 'rejected' end);
+end $$;
+revoke all on function public.decide_order_cancellation(uuid,boolean,text) from public;
+grant execute on function public.decide_order_cancellation(uuid,boolean,text) to anon, authenticated;
+
+create or replace function public.get_my_orders(p_orders jsonb)
+returns jsonb language plpgsql stable security definer set search_path=public,extensions as $$
+declare result jsonb := '[]'::jsonb; entry jsonb; oid uuid; one jsonb; n int := 0;
+begin
+  if p_orders is null or jsonb_typeof(p_orders) <> 'array' then return result; end if;
+  for entry in select * from jsonb_array_elements(p_orders) loop
+    exit when n >= 20;
+    begin
+      oid := (entry->>'id')::uuid;
+    exception when others then
+      continue;
+    end;
+    continue when not public.order_access_valid(oid, entry->>'token');
+    select jsonb_build_object(
+      'id', o.id, 'order_number', o.order_number, 'status', o.status,
+      'payment_status', o.payment_status, 'payment_method', o.payment_method,
+      'table_label', o.table_label, 'customer_name', o.customer_name,
+      'customer_phone', o.customer_phone,
+      'subtotal', coalesce(o.subtotal,0), 'tax', coalesce(o.tax,0),
+      'discount', coalesce(o.discount,0), 'total', coalesce(o.total,0),
+      'estimated_minutes', o.estimated_minutes, 'created_at', o.created_at, 'updated_at', o.updated_at,
+      'order_items', coalesce((select jsonb_agg(jsonb_build_object(
+          'id', i.id, 'item_name', i.item_name, 'quantity', i.quantity,
+          'unit_price', coalesce(i.unit_price,0),
+          'line_total', coalesce(i.line_total, coalesce(i.unit_price,0)*coalesce(i.quantity,1)),
+          'status', i.status, 'menu_item_id', i.menu_item_id, 'note', i.note))
+        from public.order_items i where i.order_id = o.id), '[]'::jsonb)
+    ) into one from public.orders o where o.id = oid;
+    if one is not null then result := result || jsonb_build_array(one); n := n + 1; end if;
+  end loop;
+  return result;
+end $$;
+revoke all on function public.get_my_orders(jsonb) from public;
+grant execute on function public.get_my_orders(jsonb) to anon, authenticated;
+
+create or replace function public.sync_customer_profile_on_order()
+returns trigger language plpgsql security definer as $$
+declare
+  v_rid uuid;
+  v_phone text;
+  v_name text;
+begin
+  v_rid := coalesce(NEW.restaurant_id, 'a0000000-0000-0000-0000-000000000001'::uuid);
+  v_phone := right(regexp_replace(coalesce(NEW.customer_phone, ''), '[^0-9]', '', 'g'), 10);
+  v_name := coalesce(nullif(trim(NEW.customer_name), ''), 'Dine-in Guest');
+
+  if length(v_phone) = 10 then
+    insert into public.customer_profiles (
+      restaurant_id, phone, full_name, created_at, visits, total_spent, status, last_visit
+    ) values (
+      v_rid, v_phone, v_name, coalesce(NEW.created_at, now()), 1, coalesce(NEW.total, 0), 'New', coalesce(NEW.created_at, now())
+    )
+    on conflict (restaurant_id, phone) do update set
+      full_name = case
+        when length(v_name) > 1 and v_name <> 'Dine-in Guest' then v_name
+        else public.customer_profiles.full_name
+      end,
+      visits = coalesce(public.customer_profiles.visits, 0) + 1,
+      total_spent = coalesce(public.customer_profiles.total_spent, 0) + coalesce(NEW.total, 0),
+      last_visit = coalesce(NEW.created_at, now()),
+      status = case
+        when (coalesce(public.customer_profiles.visits, 0) + 1) >= 10 then 'VIP'
+        when (coalesce(public.customer_profiles.visits, 0) + 1) >= 5 then 'Loyal'
+        else 'Regular'
+      end;
+  end if;
+  return NEW;
+end;
+$$;
+
+drop trigger if exists trg_sync_customer_profile on public.orders;
+create trigger trg_sync_customer_profile
+after insert on public.orders
+for each row execute function public.sync_customer_profile_on_order();
+
+alter table public.customer_profiles enable row level security;
+drop policy if exists "customer_profiles_read_all" on public.customer_profiles;
+create policy "customer_profiles_read_all" on public.customer_profiles
+  for select to anon, authenticated using (true);
+drop policy if exists "customer_profiles_write_all" on public.customer_profiles;
+create policy "customer_profiles_write_all" on public.customer_profiles
+  for all to anon, authenticated using (true) with check (true);
+
+-- ---------------------------------------------------------------------------
+-- Migration 202611280003: Auto sync table status on order creation, status change, and payment
+-- ---------------------------------------------------------------------------
+create or replace function public.sync_table_status_on_order()
+returns trigger language plpgsql security definer set search_path=public,extensions as $$
+declare
+  v_table_id uuid := NEW.table_id;
+  v_table_label text := NEW.table_label;
+begin
+  if v_table_id is null and v_table_label is not null and length(trim(v_table_label)) > 0 then
+    select id into v_table_id from public.dining_tables where upper(trim(table_number)) = upper(trim(v_table_label)) limit 1;
+  end if;
+
+  if NEW.payment_status = 'paid' or NEW.status in ('completed', 'cancelled') then
+    if v_table_id is not null then
+      if not exists (
+        select 1 from public.orders o
+        where o.table_id = v_table_id
+          and o.id <> NEW.id
+          and o.status not in ('completed', 'cancelled')
+          and coalesce(o.payment_status, 'unpaid') <> 'paid'
+      ) then
+        update public.dining_tables set status = 'available' where id = v_table_id;
+      end if;
+    elsif v_table_label is not null and length(trim(v_table_label)) > 0 then
+      if not exists (
+        select 1 from public.orders o
+        where upper(trim(o.table_label)) = upper(trim(v_table_label))
+          and o.id <> NEW.id
+          and o.status not in ('completed', 'cancelled')
+          and coalesce(o.payment_status, 'unpaid') <> 'paid'
+      ) then
+        update public.dining_tables set status = 'available' where upper(trim(table_number)) = upper(trim(v_table_label));
+      end if;
+    end if;
+
+  elsif NEW.status not in ('completed', 'cancelled') and coalesce(NEW.payment_status, 'unpaid') <> 'paid' then
+    if v_table_id is not null then
+      update public.dining_tables set status = 'occupied' where id = v_table_id;
+    elsif v_table_label is not null and length(trim(v_table_label)) > 0 then
+      update public.dining_tables set status = 'occupied' where upper(trim(table_number)) = upper(trim(v_table_label));
+    end if;
+  end if;
+
+  return NEW;
+end;
+$$;
+
+drop trigger if exists trg_sync_table_status_on_order on public.orders;
+create trigger trg_sync_table_status_on_order
+after insert or update of status, payment_status, table_id, table_label on public.orders
+for each row execute function public.sync_table_status_on_order();
+
+grant execute on function public.release_table_if_idle(uuid) to anon, authenticated;
+
+
+

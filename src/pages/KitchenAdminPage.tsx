@@ -434,6 +434,27 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
         >
           <History size={15} /> <span>Order History</span>
         </button>
+
+        <button
+          type="button"
+          className="kds-subtab-btn kds-reload-btn"
+          onClick={() => {
+            loadData(true);
+            if (setNotice) setNotice({ text: 'KDS reloaded with fresh data from database.', kind: 'info' });
+          }}
+          style={{
+            marginLeft: 'auto',
+            background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
+            color: '#ffffff',
+            border: 'none',
+            fontWeight: 800,
+            boxShadow: '0 2px 8px rgba(234, 88, 12, 0.3)'
+          }}
+          title="Reload KDS data"
+        >
+          <RefreshCw size={14} className={loading ? 'spin' : ''} />
+          <span>Reload</span>
+        </button>
       </div>
 
       {/* 2. TAB VIEW: LIVE KITCHEN */}

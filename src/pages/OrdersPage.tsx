@@ -85,7 +85,7 @@ export function OrdersPage({ setNotice, globalSearch }: { setNotice?: (n: any) =
           const targetId = selectedOrderIdRef.current || (prev?.id ? String(prev.id) : null);
           if (targetId) {
             const targetLower = targetId.toLowerCase();
-            const match = o.find((it: any) => 
+            const match = o.find((it: any) =>
               (it.id && String(it.id).toLowerCase() === targetLower) ||
               (it.order_number && (String(it.order_number) === targetId || `svr${it.order_number}`.toLowerCase() === targetLower || `#svr${it.order_number}`.toLowerCase() === targetLower))
             );
@@ -398,7 +398,28 @@ Total: ₹${Number(activeOrder.total || 0).toFixed(2)}
           </div>
         </div>
 
-        <div className="filter-group-right">
+        <div className="filter-group-right" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button
+            type="button"
+            onClick={() => loadData(true)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 14px',
+              borderRadius: 10,
+              border: '1.5px solid #ebd9c8',
+              background: '#fffaf5',
+              color: '#422116',
+              fontWeight: 700,
+              fontSize: 13,
+              cursor: 'pointer'
+            }}
+            title="Reload orders"
+          >
+            <RefreshCw size={14} className={loading ? 'spin' : ''} />
+            <span>Reload</span>
+          </button>
           <label className="live-orders-toggle-label">
             <span className="toggle-text">Live Orders</span>
             <input
@@ -411,6 +432,112 @@ Total: ₹${Number(activeOrder.total || 0).toFixed(2)}
           </label>
         </div>
       </div>
+
+      {/* Urgent Cancellation Requests Alert Bar in Admin Orders */}
+      {cancelRequests.length > 0 && (
+        <div style={{
+          background: 'linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%)',
+          color: '#ffffff',
+          padding: '14px 20px',
+          borderRadius: 14,
+          marginBottom: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+          border: '1.5px solid #ef4444',
+          boxShadow: '0 4px 14px rgba(185, 28, 28, 0.25)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <AlertTriangle size={20} color="#fca5a5" />
+              <b style={{ fontSize: 15, letterSpacing: '0.3px' }}>
+                Customer Cancellation Requests ({cancelRequests.length})
+              </b>
+            </div>
+            <span style={{ fontSize: 12, opacity: 0.9 }}>
+              Customer requested cancellation. Kitchen / Admin approval required.
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {cancelRequests.map(cr => (
+              <div key={cr.id} style={{
+                background: 'rgba(0, 0, 0, 0.25)',
+                padding: '10px 14px',
+                borderRadius: 10,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 10
+              }}>
+                <div>
+                  <span style={{ fontWeight: 800, fontSize: 14 }}>
+                    Order #{cr.orderNumber ? `SVR${cr.orderNumber}` : cr.orderId.slice(-4)}
+                  </span>
+                  <span style={{ margin: '0 8px', opacity: 0.7 }}>•</span>
+                  <span>Table {cr.tableLabel}</span>
+                  <span style={{ margin: '0 8px', opacity: 0.7 }}>•</span>
+                  <span>Guest: {cr.customerName}</span>
+                  <div style={{ fontSize: 12, color: '#fca5a5', marginTop: 2 }}>
+                    Reason: "{cr.reason}"
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await approveOrderCancellation(cr.orderId, cr.id, cr.tableLabel);
+                        if (setNotice) setNotice({ text: `Order #${cr.orderNumber} cancellation APPROVED.`, kind: 'success' });
+                        loadData(true);
+                      } catch (err: any) {
+                        if (setNotice) setNotice({ text: err.message || 'Could not approve cancellation.', kind: 'error' });
+                      }
+                    }}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: 8,
+                      background: '#22c55e',
+                      color: '#fff',
+                      border: 'none',
+                      fontWeight: 700,
+                      fontSize: 12,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Approve Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await rejectOrderCancellation(cr.id, 'Declined by orders desk');
+                        if (setNotice) setNotice({ text: `Cancellation request for Order #${cr.orderNumber} declined.`, kind: 'info' });
+                        loadData(true);
+                      } catch (err: any) {
+                        if (setNotice) setNotice({ text: err.message || 'Could not decline request.', kind: 'error' });
+                      }
+                    }}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: 8,
+                      background: 'rgba(255,255,255,0.2)',
+                      color: '#fff',
+                      border: '1px solid rgba(255,255,255,0.3)',
+                      fontWeight: 700,
+                      fontSize: 12,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Decline
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 3. Main Split View: Orders Table (Left 65%) + Order Details Drawer (Right 35%) */}
       <div className="orders-split-layout">
@@ -454,10 +581,12 @@ Total: ₹${Number(activeOrder.total || 0).toFixed(2)}
                       ? new Date(order.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
                       : '-';
 
+                    const hasCancelReq = cancelRequests.some(c => c.orderId === order.id || String(c.orderNumber) === String(order.order_number));
+
                     return (
                       <tr
                         key={order.id}
-                        className={`order-table-row ${borderClass} ${isSelected ? 'row-selected' : ''}`}
+                        className={`order-table-row ${borderClass} ${isSelected ? 'row-selected' : ''} ${hasCancelReq ? 'row-has-cancel' : ''}`}
                         onClick={() => {
                           selectedOrderIdRef.current = String(order.id);
                           setSelectedOrder(order);
@@ -465,6 +594,25 @@ Total: ₹${Number(activeOrder.total || 0).toFixed(2)}
                       >
                         <td className="bold-order-id-cell">
                           <span className="order-id-hash">#SVR{order.order_number || '-'}</span>
+                          {hasCancelReq && (
+                            <span style={{
+                              marginLeft: 6,
+                              padding: '2px 7px',
+                              borderRadius: 6,
+                              background: '#fee2e2',
+                              color: '#dc2626',
+                              border: '1px solid #fca5a5',
+                              fontSize: 10,
+                              fontWeight: 800,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.4px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 3
+                            }}>
+                              <AlertTriangle size={10} /> Cancel Req
+                            </span>
+                          )}
                           {order.customer_name && <small className="order-cust-sub">{order.customer_name}</small>}
                         </td>
                         <td>

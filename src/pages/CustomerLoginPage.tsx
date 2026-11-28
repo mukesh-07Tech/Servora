@@ -42,6 +42,10 @@ export function CustomerLoginPage({
     try {
       const res = await requestCustomerOtp(cleanPhone);
       setGeneratedOtp(res.test_otp || '');
+      // Auto-fill the customer name if the server found a previous order with this phone
+      if (res.name && !customerName.trim()) {
+        setCustomerName(res.name);
+      }
       setOtp('');
       setStep('otp');
       setNotice?.({

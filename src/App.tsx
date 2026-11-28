@@ -2608,6 +2608,36 @@ function KitchenBoard({
 
           <button
             type="button"
+            className="kds-reload-btn"
+            onClick={() => {
+              refresh();
+              if (soundRef.current) playChime();
+              notify(setNotice, 'KDS reloaded with fresh orders from database.', 'info');
+            }}
+            title="Reload KDS Live Orders"
+            aria-label="Reload KDS"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 14px',
+              borderRadius: 10,
+              background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
+              color: '#ffffff',
+              border: 'none',
+              fontWeight: 800,
+              fontSize: 13,
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(234, 88, 12, 0.35)',
+              transition: 'transform 0.15s ease'
+            }}
+          >
+            <RefreshCw size={15} />
+            <span>Reload</span>
+          </button>
+
+          <button
+            type="button"
             className="kds-icon-btn"
             onClick={toggleFullscreen}
             title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
@@ -5875,15 +5905,16 @@ function CustomerPage({
       localStorage.setItem('servora_dine_ctx', JSON.stringify({
         table,
         token: tableToken,
-        name,
-        phone,
+        // Only persist customer name/phone if customer is explicitly logged in
+        name: isCustomerLoggedIn ? name : '',
+        phone: isCustomerLoggedIn ? phone : '',
         guests: guestCount,
-        ready: customerReady,
+        ready: isCustomerLoggedIn ? customerReady : false,
         cart: cart.map(l => ({ id: l.item.id, quantity: l.quantity, note: l.note || '' })),
         at: Date.now()
       }));
     } catch { }
-  }, [table, tableToken, name, phone, guestCount, customerReady, cart]);
+  }, [table, tableToken, name, phone, guestCount, customerReady, cart, isCustomerLoggedIn]);
 
   // Put the remembered cart back once the menu has loaded
   useEffect(() => {
@@ -5917,6 +5948,23 @@ function CustomerPage({
     const tbl = params.get('table') || '';
     const isFreshStart = params.get('fresh') === 'true';
 
+    // 1. Check if customer is already logged in with verified OTP
+    let verifiedPhone = '';
+    let verifiedName = '';
+    let customerLoggedIn = false;
+    try {
+      const rawSession = localStorage.getItem('servora_customer_session');
+      const parsed = rawSession ? JSON.parse(rawSession) : null;
+      if (parsed?.phone && parsed?.verifiedAt) {
+        verifiedPhone = parsed.phone;
+        verifiedName = parsed.name || '';
+        customerLoggedIn = true;
+        setPhone(parsed.phone);
+        if (parsed.name) setName(parsed.name);
+        setIsCustomerLoggedIn(true);
+      }
+    } catch { }
+
     // Dine-in context remembered on this device (table, guest details, step and cart) for 12 hours
     let dineCtx: any = null;
     try {
@@ -5924,9 +5972,33 @@ function CustomerPage({
       if (raw && Date.now() - Number(raw.at || 0) < 12 * 3600 * 1000) dineCtx = raw;
     } catch { }
 
+    // CRITICAL: If customer is NOT logged in ("no login means"), DO NOT reuse previous customer's details!
+    // Always start fresh: clean name, phone, cart, and active order from previous diners on this device.
+    if (!customerLoggedIn) {
+      setName('');
+      setPhone('');
+      setGuestCount(2);
+      setCustomerReady(false);
+      setCart([]);
+      setOrder(null);
+      setLiveOrder(null);
+      dineCtx = null;
+      try {
+        localStorage.removeItem('servora_dine_ctx');
+        localStorage.removeItem('servora_customer_name');
+        localStorage.removeItem('servora_customer_phone');
+        if (tbl || isFreshStart) {
+          localStorage.removeItem('servora_active_order_id');
+          localStorage.removeItem('servora_active_order_token');
+          localStorage.removeItem('servora_active_order_num');
+          localStorage.removeItem('servora_active_order_table');
+        }
+      } catch { }
+    }
+
     if (tbl) {
       applyToken(tbl);
-    } else if (dineCtx?.table && !isFreshStart) {
+    } else if (dineCtx?.table && !isFreshStart && customerLoggedIn) {
       applyToken(dineCtx.token || dineCtx.table);
     } else {
       // Restore selected table from localStorage if user reloaded the page
@@ -5937,7 +6009,8 @@ function CustomerPage({
         }
       } catch { }
     }
-    if (dineCtx && !isFreshStart && (!tbl || tbl === dineCtx.table || tbl === dineCtx.token)) {
+
+    if (customerLoggedIn && dineCtx && !isFreshStart && (!tbl || tbl === dineCtx.table || tbl === dineCtx.token)) {
       if (dineCtx.name) setName(dineCtx.name);
       if (dineCtx.phone) setPhone(dineCtx.phone);
       if (dineCtx.guests) setGuestCount(Number(dineCtx.guests) || 2);
@@ -5953,42 +6026,29 @@ function CustomerPage({
       }
     });
 
-    // Check if customer is already logged in with verified OTP
-    try {
-      const rawSession = localStorage.getItem('servora_customer_session');
-      const parsed = rawSession ? JSON.parse(rawSession) : null;
-      if (parsed?.phone && parsed?.verifiedAt) {
-        setPhone(parsed.phone);
-        if (parsed.name) setName(parsed.name);
-        setIsCustomerLoggedIn(true);
-      }
-    } catch { }
-
-    const isFresh = params.get('fresh') === 'true';
-    if (isFresh) {
+    const isFresh = isFreshStart || params.get('fresh') === 'true';
+    if (isFresh || (!customerLoggedIn && tbl)) {
       setOrder(null);
       setCart([]);
       setCustomerReady(false);
-      setTable('');
-      setTableState('none');
+      if (isFresh) {
+        setTable('');
+        setTableState('none');
+      }
       try {
         localStorage.removeItem('servora_active_order_id');
         localStorage.removeItem('servora_active_order_token');
         localStorage.removeItem('servora_active_order_num');
-        localStorage.removeItem('servora_active_order_table');
+        if (isFresh) localStorage.removeItem('servora_active_order_table');
         localStorage.removeItem('servora_dine_ctx');
       } catch { }
-    } else {
-      // Restore active order from previous session if customer refreshed or returns
+    } else if (customerLoggedIn) {
+      // Restore active order from previous session for verified logged-in user
       try {
         const savedOrderId = localStorage.getItem('servora_active_order_id');
         const savedToken = localStorage.getItem('servora_active_order_token');
         const savedNum = localStorage.getItem('servora_active_order_num');
         const savedTable = localStorage.getItem('servora_active_order_table');
-        const savedName = localStorage.getItem('servora_customer_name');
-        const savedPhone = localStorage.getItem('servora_customer_phone');
-        if (savedName) setName(savedName);
-        if (savedPhone) setPhone(savedPhone);
         if (savedTable && !table) {
           setTable(savedTable);
           setTableState('valid');
@@ -6001,7 +6061,7 @@ function CustomerPage({
             status: 'received',
             payment_status: 'pending',
             table_label: savedTable || '—',
-            customer_name: savedName || 'Guest'
+            customer_name: verifiedName || 'Guest'
           });
           if (savedTable) {
             setTable(savedTable);
@@ -6165,6 +6225,18 @@ function CustomerPage({
     setCart([]);
     setCancellationRequested(false);
     setCancellationRejected(false);
+
+    // If customer is not logged in, ensure previous diner details are completely cleared
+    if (!isCustomerLoggedIn) {
+      setName('');
+      setPhone('');
+      setGuestCount(2);
+      try {
+        localStorage.removeItem('servora_customer_name');
+        localStorage.removeItem('servora_customer_phone');
+        localStorage.removeItem('servora_dine_ctx');
+      } catch { }
+    }
 
     if (keepTable && table) {
       // Stay on menu for the same table without requiring customer login
@@ -6553,6 +6625,27 @@ function CustomerPage({
       {scannerOpen && (
         <CustomQrScanner
           onDetected={scannedTable => {
+            // When scanning table QR from device:
+            // If diner is NOT logged in, wipe any stale diner info so they get a fresh check-in
+            try {
+              const raw = localStorage.getItem('servora_customer_session');
+              const s = raw ? JSON.parse(raw) : null;
+              if (!s?.phone || !s?.verifiedAt) {
+                setName('');
+                setPhone('');
+                setGuestCount(2);
+                setCustomerReady(false);
+                setCart([]);
+                setOrder(null);
+                setLiveOrder(null);
+                localStorage.removeItem('servora_dine_ctx');
+                localStorage.removeItem('servora_customer_name');
+                localStorage.removeItem('servora_customer_phone');
+                localStorage.removeItem('servora_active_order_id');
+                localStorage.removeItem('servora_active_order_token');
+                localStorage.removeItem('servora_active_order_num');
+              }
+            } catch { }
             pickTable(scannedTable);
             setScannerOpen(false);
           }}
