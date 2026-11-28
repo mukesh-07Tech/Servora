@@ -36,7 +36,8 @@ import {
   XCircle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { getMyOrders, getMyOrderToken, rememberMyOrder, getCached, getOrderCancellationStatus, submitOrderCancellationRequest, lookupMenuItemPrice, updateOrderPaymentStatus } from '../lib/data';
+import { OrderMoreModal } from './OrderMoreModal';
+import { customerLogout, getCustomerOrders, getMyOrders, getMyOrderToken, rememberMyOrder, getCached, getOrderCancellationStatus, submitOrderCancellationRequest, lookupMenuItemPrice, updateOrderPaymentStatus } from '../lib/data';
 
 export function CustomerDashboardPage({
   setNotice
@@ -53,7 +54,7 @@ export function CustomerDashboardPage({
   } catch {
     parsedSession = null;
   }
-  const isVerified = Boolean(parsedSession?.verifiedAt && parsedSession?.phone);
+  const isVerified = Boolean(parsedSession?.verifiedAt && parsedSession?.phone && parsedSession?.token);
 
   useEffect(() => {
     if (!isVerified) {
@@ -105,6 +106,7 @@ export function CustomerDashboardPage({
 
   // Cancellation states
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showOrderMore, setShowOrderMore] = useState(false);
   const [cancelReason, setCancelReason] = useState('Ordered by mistake / wrong dish');
   const [customCancelReason, setCustomCancelReason] = useState('');
   const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
@@ -148,6 +150,17 @@ export function CustomerDashboardPage({
       const myOrders = await getMyOrders();
       for (const sOrder of myOrders) {
         if (!orderList.some(o => o.id === sOrder.id)) orderList.push(sOrder);
+      }
+      // 2. Every order for the verified phone number, from any device (server checks the login session)
+      const phoneOrders = await getCustomerOrders();
+      if (phoneOrders === null) {
+        if (setNotice) setNotice({ text: 'Your session has expired. Please sign in again.', kind: 'info' });
+        nav('/customer-login', { replace: true });
+        return;
+      }
+      for (const sOrder of phoneOrders) {
+        const at = orderList.findIndex(o => o.id === sOrder.id);
+        if (at >= 0) orderList[at] = sOrder; else orderList.push(sOrder);
       }
       if (storedActiveOrderId) directStoredOrder = orderList.find(o => o.id === storedActiveOrderId) || null;
       void phoneDigits;
@@ -385,6 +398,7 @@ export function CustomerDashboardPage({
   };
 
   const handleSignOut = () => {
+    void customerLogout();
     localStorage.removeItem('servora_customer_session');
     localStorage.removeItem('servora_customer_phone');
     localStorage.removeItem('servora_customer_name');
@@ -609,9 +623,13 @@ export function CustomerDashboardPage({
               <RefreshCw size={14} /> Refresh
             </button>
 
-            <Link
-              to="/order"
+            <button
+              type="button"
+              onClick={() => setShowOrderMore(true)}
               style={{
+                border: 'none',
+                cursor: 'pointer',
+                font: 'inherit',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
@@ -628,7 +646,7 @@ export function CustomerDashboardPage({
               title="Order More Dishes"
             >
               <Utensils size={15} /> <span>Order More</span>
-            </Link>
+            </button>
 
             <button
               type="button"
@@ -787,9 +805,13 @@ export function CustomerDashboardPage({
                 <p style={{ margin: '8px 0 20px', fontSize: '14px', color: '#8c6e58' }}>
                   You do not have any ongoing dine-in orders at this moment. Browse our freshly prepared menu to place an order!
                 </p>
-                <Link
-                  to="/order"
+                <button
+              type="button"
+              onClick={() => setShowOrderMore(true)}
                   style={{
+                border: 'none',
+                cursor: 'pointer',
+                font: 'inherit',
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '8px',
@@ -804,7 +826,7 @@ export function CustomerDashboardPage({
                   }}
                 >
                   <Utensils size={18} /> View Menu &amp; Order Now
-                </Link>
+                </button>
               </div>
             ) : String(activeOrder.status).toLowerCase() === 'cancelled' ? (
               <div
@@ -842,9 +864,13 @@ export function CustomerDashboardPage({
                 <div style={{ maxWidth: 460, margin: '0 auto 24px', background: '#fffaf5', border: '1px solid #fed7aa', borderRadius: 14, padding: 14, fontSize: 13, color: '#9a3412', textAlign: 'left', lineHeight: 1.5 }}>
                   Table {activeOrder.table_label || 'T01'} was freed and all ordered items voided. No bills or charges have been incurred.
                 </div>
-                <Link
-                  to="/order"
+                <button
+              type="button"
+              onClick={() => setShowOrderMore(true)}
                   style={{
+                border: 'none',
+                cursor: 'pointer',
+                font: 'inherit',
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '8px',
@@ -859,7 +885,7 @@ export function CustomerDashboardPage({
                   }}
                 >
                   <Utensils size={18} /> View Menu &amp; Place New Order
-                </Link>
+                </button>
               </div>
             ) : (
               <>
@@ -1075,7 +1101,7 @@ export function CustomerDashboardPage({
                     >
                       <Receipt size={14} color="#ea580c" /> Request Bill
                     </button>
-                    {!['served', 'completed', 'cancelled'].includes(String(activeOrder.status).toLowerCase()) && !cancellationRequested && (
+                    {!['served', 'completed', 'cancelled'].includes(String(activeOrder.status).toLowerCase()) && activeOrder.payment_status !== 'paid' && !cancellationRequested && (
                       <button
                         type="button"
                         className="tracker-service-btn"
@@ -1429,7 +1455,7 @@ export function CustomerDashboardPage({
                                     localStorage.removeItem('servora_active_order_num');
                                     localStorage.removeItem('servora_active_order_table');
                                   } catch { }
-                                  window.location.href = '/order';
+                                  setShowOrderMore(true);
                                 }}
                                 style={{
                                   marginTop: '8px',
@@ -2506,6 +2532,23 @@ Thank you for dining at Servora!
           </div>
         </div>
       )}
+
+      <OrderMoreModal
+        open={showOrderMore}
+        onClose={() => setShowOrderMore(false)}
+        customerName={customerName}
+        customerPhone={customerPhone}
+        knownTable={activeOrder?.table_label || localStorage.getItem('servora_active_order_table') || ''}
+        setNotice={setNotice}
+        onPlaced={placed => {
+          setShowOrderMore(false);
+          setActiveTab('tracker');
+          const key = String(placed.order_number || placed.id);
+          userPinnedOrderKeyRef.current = key;
+          setUserPinnedOrderKey(key);
+          loadCustomerData();
+        }}
+      />
     </div>
   );
 }

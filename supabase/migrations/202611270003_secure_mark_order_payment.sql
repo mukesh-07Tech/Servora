@@ -35,7 +35,7 @@ create or replace function public.release_table_if_idle(p_table_id uuid) returns
 language plpgsql security definer set search_path=public as $$
 begin
   if p_table_id is not null and not exists(
-       select 1 from public.orders x where x.table_id = p_table_id and x.status not in ('completed','cancelled')) then
+       select 1 from public.orders x where x.table_id = p_table_id and x.status not in ('completed','cancelled') and x.payment_status <> 'paid') then
     update public.dining_tables set status = 'available' where id = p_table_id;
   end if;
 end $$;

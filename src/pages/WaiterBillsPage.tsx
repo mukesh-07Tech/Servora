@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
@@ -33,6 +33,7 @@ export function WaiterBillsPage({
   const [settledBills, setSettledBills] = useState<any[]>([]);
   const [cancelRequests, setCancelRequests] = useState<CancellationRequestInfo[]>([]);
   const [selectedTableNum, setSelectedTableNum] = useState<string>('T01');
+  const pickedTableRef = useRef(false);
   const [paymentMode, setPaymentMode] = useState<'cash' | 'upi' | 'razorpay'>('cash');
   const [cashTendered, setCashTendered] = useState<string>('');
   const [upiRef, setUpiRef] = useState<string>('');
@@ -111,15 +112,25 @@ export function WaiterBillsPage({
 
   // Filter tables that have an active order or requested bill
   const billingTables = tables.filter(t => {
-    const hasOrder = orders.some(o => matchTableLabels(o.table_label, t.table_number) && o.payment_status !== 'paid');
+    const hasOrder = orders.some(o => matchTableLabels(o.table_label, t.table_number) && o.payment_status !== 'paid' && o.status !== 'cancelled');
     return hasOrder || t.status === 'bill_requested' || t.status === 'occupied';
   });
 
   const currentTable = tables.find(t => matchTableLabels(t.table_number, selectedTableNum)) || billingTables[0] || tables[0];
   const tableOrders = orders.filter(
-    o => matchTableLabels(o.table_label, currentTable?.table_number) && o.payment_status !== 'paid'
+    o => matchTableLabels(o.table_label, currentTable?.table_number) && o.payment_status !== 'paid' && o.status !== 'cancelled'
   );
   const [mergeAllOrders, setMergeAllOrders] = useState(true);
+
+  // On first load, open the first table that actually has something to bill
+  useEffect(() => {
+    if (pickedTableRef.current || tableOrders.length > 0) return;
+    const busy = orders.find(o => o.payment_status !== 'paid' && o.status !== 'cancelled' && o.table_label);
+    if (busy) {
+      const tbl = tables.find(tt => matchTableLabels(tt.table_number, busy.table_label));
+      if (tbl) setSelectedTableNum(tbl.table_number);
+    }
+  }, [orders, tables]);
 
   // If table has multiple unpaid orders and mergeAllOrders is enabled, merge them all into a single settlement
   const activeOrders = (tableOrders.length > 1 && mergeAllOrders)
@@ -261,13 +272,15 @@ export function WaiterBillsPage({
         {tables.map(t => {
           const isSel = t.table_number === selectedTableNum;
           const hasBillReq = t.status === 'bill_requested';
-          const isOcc = t.status === 'occupied';
+          // A table is busy when it has an unpaid, non-cancelled order, whatever the table record says
+          const isOcc = ['occupied', 'ordering'].includes(t.status) ||
+            orders.some(o => matchTableLabels(o.table_label, t.table_number) && o.payment_status !== 'paid' && !['cancelled', 'completed'].includes(o.status));
 
           return (
             <button
               key={t.id || t.table_number}
               type="button"
-              onClick={() => setSelectedTableNum(t.table_number)}
+              onClick={() => { pickedTableRef.current = true; setSelectedTableNum(t.table_number); }}
               style={{
                 padding: '10px 18px',
                 borderRadius: '14px',
@@ -312,7 +325,7 @@ export function WaiterBillsPage({
                 Table {currentTable?.table_number || 'T01'} – Order Summary
               </h3>
               <small style={{ color: '#8c6e58' }}>
-                Order #{activeOrder ? activeOrder.order_number : '—'} &bull; Guest: {activeOrder?.customer_name || 'Dine-In Guest'}
+                Order #{activeOrder ? activeOrder.order_number : '—'} &bull; Guest: {activeOrder?.customer_name || 'Dine-In Guest'}{activeOrder?.customer_phone ? ` (${activeOrder.customer_phone})` : ''}
               </small>
             </div>
             <span className="table-status-pill occupied">

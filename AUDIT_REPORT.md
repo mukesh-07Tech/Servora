@@ -48,3 +48,9 @@ Merged without changing the UI: multiple active orders with an order switcher, a
 - Browser-stored "paid" flags are not trusted; paid status comes from the server.
 - **Run migration `202611270005` in Supabase** (in addition to 0001 to 0004).
 - Tested: database isolation on PostgreSQL (own orders only, wrong or missing tokens ignored, anonymous direct reads return nothing), multi-order switching and pin persistence, pay gating, fresh booking, table persistence, at 390, 820 and 1440px; staff roles and cancel approval re-run with no regressions.
+
+## Update: customer dashboard, Order More, staff sync, reload (final round)
+See HOW_TO_DEPLOY.md for the deployment steps and the issue-by-issue list.
+- New migrations `202611270006` (server verified customer login and sessions) and `202611270007` (removes leftover open-access policies). `supabase/UPDATE_RUN_THIS.sql` bundles 0001 to 0007 and was run twice on a database that had the old open policies and once on the original schema.
+- Tested against the real schema and row-level security by running the website against a local PostgREST: order placement, staff views, cancel request and approval, waiter settlement, payment shown to customer, second-device login, every dashboard page, Order More popup, sign out.
+- Fixed: Kitchen crash (hooks order), redirect to login on reload with a valid session, staff list query using a missing column, wrong-table fallback (T01), invented amounts on Orders, bills page not detecting busy tables or skipping cancelled orders.

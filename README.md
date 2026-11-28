@@ -208,6 +208,8 @@ Only `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` and the non-secret `VITE_APP_
 
 The project is not yet production-certified. Still required: full order cancellation/modification approval UI, table merge/transfer and close-visit workflows, full inventory/recipe deduction, configurable menu time schedules, complete customer feedback and customer management, detailed analytics, settings forms, QR camera scanning for attendance, real SMS/WhatsApp/email provider delivery, AI semantic voice ordering, PDF invoice/receipt output, and a full browser/device/RLS acceptance test. Do not use this build for live financial operations until those items and the production security review are complete.
 
+See **HOW_TO_DEPLOY.md** for the full step-by-step guide (database update, deploy, test checklist).
+
 ## Deploy with Git + Vercel (no environment variables needed in Vercel)
 
 1. Push this repository to GitHub (the folder already contains a clean git history).

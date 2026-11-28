@@ -169,7 +169,8 @@ function App() {
     } catch { }
   }, []);
 
-  const [sessionReady, setSessionReady] = useState(true);
+  // Wait for the real session check before deciding to send a signed-in user to the login page.
+  const [sessionReady, setSessionReady] = useState(() => !supabaseConfigured || !!profile);
 
   useEffect(() => {
     const client = supabase;
@@ -191,7 +192,7 @@ function App() {
     client.auth.getSession().then(async ({ data }) => {
       if (data?.session) await loadProfile(data.session.user.id, data.session.user.email);
       else setProfile(null);
-    }).catch(() => { });
+    }).catch(() => { }).finally(() => setSessionReady(true));
 
     const { data: { subscription } } = client.auth.onAuthStateChange((event, s) => {
       if (!s) {
@@ -1947,7 +1948,20 @@ function minutesSince(iso: string, now: number) {
   return Math.max(0, Math.floor((now - new Date(iso).getTime()) / 60000));
 }
 
-function Kitchen({
+type KitchenProps = {
+  setNotice: (n: Notice | null) => void;
+  profile?: StaffProfile | null;
+  signOut?: () => void;
+  isStandalone?: boolean;
+};
+
+// The kitchen screen is split in two components so React always sees the same hooks per component.
+// (Returning early before declaring more hooks crashed the page when the profile loaded after first render.)
+function Kitchen(props: KitchenProps) {
+  return props.profile ? <KitchenBoard {...props} profile={props.profile} /> : <KitchenLogin {...props} />;
+}
+
+function KitchenLogin({
   setNotice,
   profile,
   signOut,
@@ -1964,8 +1978,6 @@ function Kitchen({
   const [kdsLoading, setKdsLoading] = useState(false);
   const [kdsError, setKdsError] = useState('');
 
-  // Enforce Kitchen Display System login requirement
-  if (!profile) {
     const handleKdsLogin = async (e: React.FormEvent) => {
       e.preventDefault();
       setKdsLoading(true);
@@ -2123,8 +2135,15 @@ function Kitchen({
         </div>
       </div>
     );
-  }
+}
 
+function KitchenBoard({
+  setNotice,
+  profile,
+  signOut,
+  isStandalone = false
+}: Omit<KitchenProps, 'profile'> & { profile: StaffProfile }) {
+  const nav = useNavigate();
   const currentProfile: StaffProfile = profile;
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -5748,6 +5767,7 @@ function CustomerPage({
   const [search, setSearch] = useState('');
   const [cartSheetOpen, setCartSheetOpen] = useState(false);
   const [tablePickerOpen, setTablePickerOpen] = useState(false);
+  const pendingCartRef = useRef<{ id: string; quantity: number; note?: string }[] | null>(null);
 
   // Step 1 Details
   const [table, setTable] = useState('');
@@ -5829,15 +5849,55 @@ function CustomerPage({
       // Graceful fallback
     }
 
-    // 3. Fallback: extract table pattern from string or confirm default table
+    // 3. Fallback: a table pattern inside the text, otherwise the table this device already confirmed.
+    //    Never guess a table: serving the wrong table is worse than asking again.
     const match = clean.match(/T\d+/i);
-    const fallbackTable = match ? match[0].toUpperCase() : 'T01';
+    let rememberedTable = '';
+    try { rememberedTable = localStorage.getItem('servora_active_order_table') || ''; } catch { }
+    const fallbackTable = match ? match[0].toUpperCase() : rememberedTable;
+    if (!fallbackTable) {
+      setTable('');
+      setTableState('invalid');
+      notify(setNotice, 'We could not read this table QR code. Please pick your table from the list.', 'error');
+      return;
+    }
     setTable(fallbackTable);
     try { localStorage.setItem('servora_active_order_table', fallbackTable); } catch { }
     setTableState('valid');
     setRestaurantOpen(true);
     notify(setNotice, `Table ${fallbackTable} confirmed. Welcome to Servora Dine-In!`, 'success');
   }
+
+  // Remember where the diner is (table, details, step, cart) so a reload never loses it
+  useEffect(() => {
+    if (!table && !customerReady) return;
+    try {
+      localStorage.setItem('servora_dine_ctx', JSON.stringify({
+        table,
+        token: tableToken,
+        name,
+        phone,
+        guests: guestCount,
+        ready: customerReady,
+        cart: cart.map(l => ({ id: l.item.id, quantity: l.quantity, note: l.note || '' })),
+        at: Date.now()
+      }));
+    } catch { }
+  }, [table, tableToken, name, phone, guestCount, customerReady, cart]);
+
+  // Put the remembered cart back once the menu has loaded
+  useEffect(() => {
+    if (menuState !== 'ready' || !pendingCartRef.current) return;
+    const saved = pendingCartRef.current;
+    pendingCartRef.current = null;
+    const lines = saved
+      .map(c => {
+        const item = menu.find(m => m.id === c.id);
+        return item ? ({ item, quantity: c.quantity, note: c.note || '' } as CartLine) : null;
+      })
+      .filter(Boolean) as CartLine[];
+    if (lines.length) setCart(lines);
+  }, [menuState, menu]);
 
   function loadMenu() {
     setMenuState('loading');
@@ -5855,8 +5915,19 @@ function CustomerPage({
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tbl = params.get('table') || '';
+    const isFreshStart = params.get('fresh') === 'true';
+
+    // Dine-in context remembered on this device (table, guest details, step and cart) for 12 hours
+    let dineCtx: any = null;
+    try {
+      const raw = JSON.parse(localStorage.getItem('servora_dine_ctx') || 'null');
+      if (raw && Date.now() - Number(raw.at || 0) < 12 * 3600 * 1000) dineCtx = raw;
+    } catch { }
+
     if (tbl) {
       applyToken(tbl);
+    } else if (dineCtx?.table && !isFreshStart) {
+      applyToken(dineCtx.token || dineCtx.table);
     } else {
       // Restore selected table from localStorage if user reloaded the page
       try {
@@ -5865,6 +5936,13 @@ function CustomerPage({
           applyToken(cachedTable);
         }
       } catch { }
+    }
+    if (dineCtx && !isFreshStart && (!tbl || tbl === dineCtx.table || tbl === dineCtx.token)) {
+      if (dineCtx.name) setName(dineCtx.name);
+      if (dineCtx.phone) setPhone(dineCtx.phone);
+      if (dineCtx.guests) setGuestCount(Number(dineCtx.guests) || 2);
+      if (dineCtx.ready && dineCtx.table) setCustomerReady(true);
+      if (Array.isArray(dineCtx.cart) && dineCtx.cart.length) pendingCartRef.current = dineCtx.cart;
     }
     loadMenu();
 
@@ -5898,6 +5976,7 @@ function CustomerPage({
         localStorage.removeItem('servora_active_order_token');
         localStorage.removeItem('servora_active_order_num');
         localStorage.removeItem('servora_active_order_table');
+        localStorage.removeItem('servora_dine_ctx');
       } catch { }
     } else {
       // Restore active order from previous session if customer refreshed or returns
@@ -6074,6 +6153,7 @@ function CustomerPage({
       }
       if (!keepTable) {
         localStorage.removeItem('servora_active_order_table');
+        localStorage.removeItem('servora_dine_ctx');
         setTable('');
         setTableToken('');
         setTableState('none');
@@ -6787,7 +6867,7 @@ function CustomerPage({
                       <AlertTriangle size={18} style={{ flexShrink: 0 }} />
                       <span>Your cancellation request was declined by staff, for example because cooking has finished. Please speak to your server.</span>
                     </div>
-                  ) : !['served', 'completed'].includes(st) ? (
+                  ) : !['served', 'completed'].includes(st) && liveOrder?.payment_status !== 'paid' && order?.payment_status !== 'paid' ? (
                     <button
                       type="button"
                       onClick={() => setShowCancelModal(true)}
@@ -6826,7 +6906,7 @@ function CustomerPage({
                     const isOrderPaid = (liveOrder?.payment_status === 'paid' || order?.payment_status === 'paid');
                     const isServed = ['served', 'completed'].includes(st);
 
-                    if (!isServed) return null;
+                    if (!isServed && !isOrderPaid) return null;
 
                     if (isOrderPaid) {
                       return (
@@ -7563,7 +7643,7 @@ function CustomerPage({
               const isOrderPaid = (liveOrder?.payment_status === 'paid' || order?.payment_status === 'paid');
               const isServed = ['served', 'completed'].includes(((liveOrder?.status || order?.status || '') as string).toLowerCase());
 
-              if (!isServed) return null;
+              if (!isServed && !isOrderPaid) return null;
 
               if (isOrderPaid) {
                 return (

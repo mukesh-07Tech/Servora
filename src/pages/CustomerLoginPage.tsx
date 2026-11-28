@@ -13,8 +13,7 @@ import {
   AlertCircle,
   User
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
-import { getCached } from '../lib/data';
+import { requestCustomerOtp, verifyCustomerOtp, saveCustomerSession } from '../lib/data';
 
 export function CustomerLoginPage({
   setNotice
@@ -25,12 +24,12 @@ export function CustomerLoginPage({
   const [phone, setPhone] = useState('');
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [otp, setOtp] = useState('');
-  const [generatedOtp, setGeneratedOtp] = useState('123456');
+  const [generatedOtp, setGeneratedOtp] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  // Handle phone submission & generate OTP
+  // Ask the server for a verification code
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanPhone = phone.replace(/\D/g, '');
@@ -38,98 +37,62 @@ export function CustomerLoginPage({
       setError('Please enter a valid 10-digit mobile number.');
       return;
     }
-
     setError('');
     setBusy(true);
-
     try {
-      // 1. Check local customer cache immediately
-      let matchedName = '';
-      const cachedCusts = getCached<any[]>('customers') || [];
-      const cachedMatch = cachedCusts.find(c => (c.phone || '').replace(/\D/g, '').includes(cleanPhone.slice(-10)));
-      if (cachedMatch?.full_name) {
-        matchedName = cachedMatch.full_name;
-      }
-
-      setCustomerName(matchedName || '');
-
-      // Generate a fresh 6-digit verification code immediately
-      const freshCode = String(Math.floor(100000 + Math.random() * 900000));
-      setGeneratedOtp(freshCode);
+      const res = await requestCustomerOtp(cleanPhone);
+      setGeneratedOtp(res.test_otp || '');
       setOtp('');
       setStep('otp');
-      if (setNotice) {
-        setNotice({
-          text: `Verification code for +91 ${cleanPhone.slice(-10)}: ${freshCode}`,
-          kind: 'info'
-        });
-      }
-
-      // 2. Non-blocking background query for past orders customer name
-      if (!matchedName && supabase) {
-        const client = supabase;
-        (async () => {
-          try {
-            const { data } = await client
-              .from('orders')
-              .select('customer_name')
-              .ilike('customer_phone', `%${cleanPhone.slice(-10)}%`)
-              .order('created_at', { ascending: false })
-              .limit(1)
-              .maybeSingle();
-            if (data?.customer_name) setCustomerName(data.customer_name);
-          } catch {}
-        })();
-      }
+      setNotice?.({
+        text: res.test_otp ? `Test verification code: ${res.test_otp}` : `Verification code sent to +91 ${cleanPhone.slice(-10)}.`,
+        kind: 'info'
+      });
     } catch (err: any) {
-      setError(err.message || 'Failed to send OTP.');
+      setError(err.message || 'Failed to send the verification code.');
     } finally {
       setBusy(false);
     }
   };
 
-  const handleRegenerateOtp = () => {
-    const freshCode = String(Math.floor(100000 + Math.random() * 900000));
-    setGeneratedOtp(freshCode);
-    setOtp('');
-    if (setNotice) {
-      setNotice({
-        text: `New verification code generated: ${freshCode}`,
-        kind: 'info'
-      });
+  const handleRegenerateOtp = async () => {
+    const cleanPhone = phone.replace(/\D/g, '');
+    setError('');
+    try {
+      const res = await requestCustomerOtp(cleanPhone);
+      setGeneratedOtp(res.test_otp || '');
+      setOtp('');
+      setNotice?.({ text: res.test_otp ? `New test verification code: ${res.test_otp}` : 'A new verification code has been sent.', kind: 'info' });
+    } catch (err: any) {
+      setError(err.message || 'Could not send a new code.');
     }
   };
 
-  // Handle OTP verification
-  const handleVerifyOtp = (e: React.FormEvent) => {
+  // The server checks the code and opens the session
+  const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-
-    if (otp.trim() !== generatedOtp) {
-      setError(`Invalid verification code. Please enter the 6-digit code sent to your phone.`);
+    if (otp.trim().length !== 6) {
+      setError('Please enter the 6-digit verification code.');
       return;
     }
-
     const cleanPhone = phone.replace(/\D/g, '').slice(-10);
-    const finalName = customerName.trim() || 'Valued Diner';
-    const session = {
-      phone: cleanPhone,
-      name: finalName,
-      verifiedAt: Date.now()
-    };
-
-    localStorage.setItem('servora_customer_session', JSON.stringify(session));
-    localStorage.setItem('servora_customer_phone', cleanPhone);
-    localStorage.setItem('servora_customer_name', finalName);
-
-    if (setNotice) {
-      setNotice({
-        text: `Welcome, ${finalName}! Signed in successfully.`,
-        kind: 'success'
-      });
+    setBusy(true);
+    try {
+      const res = await verifyCustomerOtp(cleanPhone, otp.trim());
+      if (!res.ok || !res.token) {
+        setError(res.error || 'Invalid verification code.');
+        return;
+      }
+      const finalName = customerName.trim() || res.name || 'Valued Diner';
+      saveCustomerSession({ phone: cleanPhone, name: finalName, token: res.token });
+      setNotice?.({ text: `Welcome, ${finalName}! Signed in successfully.`, kind: 'success' });
+      nav('/customer-dashboard');
+    } catch (err: any) {
+      setError(err.message || 'Could not verify the code. Please try again.');
+    } finally {
+      setBusy(false);
     }
-
-    nav('/customer-dashboard');
   };
 
   return (
@@ -384,8 +347,7 @@ export function CustomerLoginPage({
                     type="text"
                     value={customerName}
                     onChange={e => setCustomerName(e.target.value)}
-                    placeholder="Enter your full name"
-                    required
+                    placeholder="Your name (optional)"
                     style={{
                       flex: 1,
                       padding: '13px 0',
@@ -437,7 +399,7 @@ export function CustomerLoginPage({
                   />
                 </div>
 
-                {/* Newly generated OTP displayed right below the box */}
+                {generatedOtp ? (
                 <div
                   style={{
                     marginTop: '10px',
@@ -510,6 +472,9 @@ export function CustomerLoginPage({
                     </button>
                   </div>
                 </div>
+                ) : (
+                  <p style={{ marginTop: '10px', fontSize: '13px', color: '#7c5841' }}>Enter the 6-digit code we sent to your mobile number.</p>
+                )}
               </div>
 
               <button

@@ -430,7 +430,7 @@ export async function getStaffList(forceRefresh = false) {
   if (!supabase) return cached || [];
   const result = await withTimeout(
     (async () => {
-      const { data, error } = await supabase.from('profiles').select('id, full_name, email, phone, role, approval_status, station_id, kitchen_stations(name)').order('full_name');
+      const { data, error } = await supabase.from('profiles').select('id, full_name, phone, role, approval_status, station_id, kitchen_stations(name)').order('full_name');
       if (error) return [];
       return data || [];
     })(),
@@ -898,7 +898,10 @@ export function rememberMyOrder(ref: { id: string; token: string; number?: strin
 export function getMyOrderToken(orderId: string): string {
   const hit = readMyOrders().find(r => r.id === orderId);
   if (hit) return hit.token;
-  try { return localStorage.getItem('servora_active_order_id') === orderId ? (localStorage.getItem('servora_active_order_token') || '') : ''; } catch { return ''; }
+  try {
+    if (localStorage.getItem('servora_active_order_id') === orderId) return localStorage.getItem('servora_active_order_token') || '';
+  } catch { }
+  return getCustomerSession()?.token || '';
 }
 
 /** Orders from this device whose access token is still valid (12 hours). */
@@ -915,4 +918,62 @@ export async function getMyOrders(): Promise<any[]> {
     if (kept.length !== refs.length) localStorage.setItem(MY_ORDERS_KEY, JSON.stringify(kept));
   } catch { }
   return data;
+}
+
+// ---------------------------------------------------------------------------
+// Customer login (server verified OTP + server issued session token)
+// ---------------------------------------------------------------------------
+export type CustomerSession = { phone: string; name: string; token: string; verifiedAt: number };
+
+export function getCustomerSession(): CustomerSession | null {
+  try {
+    const raw = JSON.parse(localStorage.getItem('servora_customer_session') || 'null');
+    if (raw?.phone && raw?.token) return raw as CustomerSession;
+  } catch { }
+  return null;
+}
+
+export function saveCustomerSession(s: { phone: string; name: string; token: string }) {
+  const clean = s.phone.replace(/\D/g, '').slice(-10);
+  localStorage.setItem('servora_customer_session', JSON.stringify({ phone: clean, name: s.name, token: s.token, verifiedAt: Date.now() }));
+  localStorage.setItem('servora_customer_phone', clean);
+  localStorage.setItem('servora_customer_name', s.name);
+}
+
+export function clearCustomerSession() {
+  try {
+    localStorage.removeItem('servora_customer_session');
+  } catch { }
+}
+
+export async function requestCustomerOtp(phone: string): Promise<{ sent: boolean; test_otp?: string; expires_in?: number }> {
+  if (!supabase) throw new Error('The service is not configured.');
+  const { data, error } = await supabase.rpc('request_customer_otp', { p_phone: phone });
+  if (error) throw friendlyDbError(error, 'Could not send the verification code.');
+  return data;
+}
+
+export async function verifyCustomerOtp(phone: string, otp: string): Promise<{ ok: boolean; error?: string; token?: string; name?: string }> {
+  if (!supabase) throw new Error('The service is not configured.');
+  const { data, error } = await supabase.rpc('verify_customer_otp', { p_phone: phone, p_otp: otp });
+  if (error) throw friendlyDbError(error, 'Could not verify the code.');
+  return data;
+}
+
+export async function customerLogout() {
+  const sess = getCustomerSession();
+  clearCustomerSession();
+  if (sess && supabase) { try { await supabase.rpc('customer_logout', { p_token: sess.token }); } catch { } }
+}
+
+/** All orders for the signed-in customer's verified phone (last 90 days). Returns null when the session is no longer valid. */
+export async function getCustomerOrders(): Promise<any[] | null> {
+  const sess = getCustomerSession();
+  if (!supabase || !sess) return [];
+  const { data, error } = await supabase.rpc('get_customer_orders', { p_phone: sess.phone, p_token: sess.token });
+  if (error) {
+    if (/session expired/i.test(error.message || '')) { clearCustomerSession(); return null; }
+    return [];
+  }
+  return Array.isArray(data) ? data : [];
 }

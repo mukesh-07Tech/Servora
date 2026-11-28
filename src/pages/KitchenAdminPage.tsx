@@ -369,7 +369,7 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
       '      Kitchen Order History Slip          ',
       '==========================================',
       `Order Number: #SVR${order.order_number}`,
-      `Table       : ${order.table_label || 'T01'}`,
+      `Table       : ${order.table_label || '-'}`,
       `Customer    : ${order.customer_name || 'Guest'}`,
       `Date & Time : ${new Date(order.created_at).toLocaleString('en-IN')}`,
       `Status      : ${(order.status || 'completed').toUpperCase()}`,
@@ -563,7 +563,7 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
                             </span>
                           </div>
                           <div className="ticket-table-group">
-                            <span className="ticket-table-badge">{order.table_label || 'T01'}</span>
+                            <span className="ticket-table-badge">{order.table_label || '-'}</span>
                             <span className="ticket-guests"><Users size={12} /> {order.guests || 2} Guests</span>
                           </div>
                         </div>
@@ -652,7 +652,7 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
                             </span>
                           </div>
                           <div className="ticket-table-group">
-                            <span className="ticket-table-badge">{order.table_label || 'T01'}</span>
+                            <span className="ticket-table-badge">{order.table_label || '-'}</span>
                             <span className="ticket-guests"><Users size={12} /> {order.guests || 2} Guests</span>
                           </div>
                         </div>
@@ -741,7 +741,7 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
                             </span>
                           </div>
                           <div className="ticket-table-group">
-                            <span className="ticket-table-badge">{order.table_label || 'T01'}</span>
+                            <span className="ticket-table-badge">{order.table_label || '-'}</span>
                             <span className="ticket-guests"><Users size={12} /> {order.guests || 2} Guests</span>
                           </div>
                         </div>
@@ -951,7 +951,7 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
                         </td>
                         <td style={{ padding: '14px 18px' }}>
                           <span style={{ background: '#fff0e5', color: '#c2410c', padding: '3px 8px', borderRadius: 6, fontWeight: 700, fontSize: 12 }}>
-                            {ord.table_label || 'T01'}
+                            {ord.table_label || '-'}
                           </span>
                         </td>
                         <td style={{ padding: '14px 18px', maxWidth: 320 }}>
@@ -1370,7 +1370,7 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
                         </td>
                         <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>
                           <span style={{ background: '#422116', color: '#ffffff', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>
-                            {order.table_label || 'T01'}
+                            {order.table_label || '-'}
                           </span>
                         </td>
                         <td style={{ padding: '12px 14px', fontWeight: 700, color: '#3b1e10', whiteSpace: 'nowrap' }}>
@@ -1472,7 +1472,7 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 20, fontWeight: 800, color: '#3b1e10' }}>Order #SVR{selectedHistoryOrder.order_number}</span>
                   <span style={{ background: '#422116', color: '#ffffff', padding: '3px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700 }}>
-                    Table {selectedHistoryOrder.table_label || 'T01'}
+                    Table {selectedHistoryOrder.table_label || '-'}
                   </span>
                   <span style={{ background: '#dcfce7', color: '#15803d', padding: '3px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700, textTransform: 'uppercase' }}>
                     {selectedHistoryOrder.status || 'COMPLETED'}
@@ -1510,7 +1510,7 @@ export function KitchenAdminPage({ setNotice }: { setNotice?: (n: any) => void }
               </div>
               <div>
                 <span style={{ color: '#8a6452', display: 'block', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>Dining Table</span>
-                <b style={{ color: '#ea580c', fontSize: 14 }}>{selectedHistoryOrder.table_label || 'T01'}</b>
+                <b style={{ color: '#ea580c', fontSize: 14 }}>{selectedHistoryOrder.table_label || '-'}</b>
               </div>
               <div>
                 <span style={{ color: '#8a6452', display: 'block', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>Guests / Persons</span>

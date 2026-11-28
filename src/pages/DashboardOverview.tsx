@@ -436,7 +436,7 @@ export function DashboardOverview() {
                       <b>#SVR{o.order_number || 1000 + idx}</b>
                     </div>
                     <div className="live-card-table-col">
-                      <span className="table-chip-mini">{o.table_label || 'T01'}</span>
+                      <span className="table-chip-mini">{o.table_label || '-'}</span>
                     </div>
                     <div className="live-card-guests-col">
                       <Users size={13} />
@@ -507,7 +507,7 @@ export function DashboardOverview() {
                           <b>#SVR{o.order_number || 1000 + idx}</b>
                         </td>
                         <td>
-                          <span className="table-badge-outline">{o.table_label || 'T01'}</span>
+                          <span className="table-badge-outline">{o.table_label || '-'}</span>
                         </td>
                         <td className="items-cell" title={itemsSummary}>
                           {itemsSummary}

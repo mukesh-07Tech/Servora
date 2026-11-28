@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Phone,
   AlertCircle,
   Bell,
   Calendar,
@@ -221,6 +222,16 @@ Total: ₹${Number(activeOrder.total || 0).toFixed(2)}
   };
 
   // Helper to get image for an order item (prioritizing uploaded menu item images)
+  // Real amount of an order: stored total, else subtotal + tax, else the sum of its items
+  const orderAmount = (o: any) => {
+    const total = Number(o.total) || 0;
+    if (total > 0) return Number(total.toFixed(2));
+    const sub = Number(o.subtotal) || 0;
+    if (sub > 0) return Number((sub + (Number(o.tax) || 0)).toFixed(2));
+    const items = (o.order_items || []).reduce((n: number, it: any) => n + (Number(it.line_total) || (Number(it.unit_price) || 0) * (Number(it.quantity) || 1)), 0);
+    return Number(items.toFixed(2));
+  };
+
   const getItemImage = (item: any) => {
     const rawName = (item.item_name || item.name || '').trim().toLowerCase();
 
@@ -436,12 +447,12 @@ Total: ₹${Number(activeOrder.total || 0).toFixed(2)}
                     );
                     const itemsSummary = (order.order_items || [])
                       .map((it: any) => `${it.item_name}${Number(it.quantity) > 1 ? ` (${it.quantity})` : ''}`)
-                      .join(', ') || 'Idli (2), Filter Coffee';
+                      .join(', ') || 'No items recorded';
 
                     const borderClass = getRowStatusBorderClass(order.status);
                     const formattedTime = order.created_at
                       ? new Date(order.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-                      : '12:38 PM';
+                      : '-';
 
                     return (
                       <tr
@@ -453,10 +464,11 @@ Total: ₹${Number(activeOrder.total || 0).toFixed(2)}
                         }}
                       >
                         <td className="bold-order-id-cell">
-                          <span className="order-id-hash">#SVR{order.order_number || '1045'}</span>
+                          <span className="order-id-hash">#SVR{order.order_number || '-'}</span>
+                          {order.customer_name && <small className="order-cust-sub">{order.customer_name}</small>}
                         </td>
                         <td>
-                          <span className="table-chip-badge">{order.table_label || 'T03'}</span>
+                          <span className="table-chip-badge">{order.table_label || '-'}</span>
                         </td>
                         <td className="guests-cell">
                           <Users size={12} className="user-icon-subtle" /> <span>{order.guests || 2}</span>
@@ -465,7 +477,7 @@ Total: ₹${Number(activeOrder.total || 0).toFixed(2)}
                           {itemsSummary}
                         </td>
                         <td className="amount-cell">
-                          <b>₹{Number(order.total || 180)}</b>
+                          <b>₹{orderAmount(order)}</b>
                         </td>
                         <td>
                           {getStatusBadge(order.status)}
@@ -585,7 +597,7 @@ Total: ₹${Number(activeOrder.total || 0).toFixed(2)}
             <div className="drawer-body">
               {/* Order Number & Status Badge */}
               <div className="drawer-order-header-row">
-                <h3 className="drawer-order-id">#SVR{activeOrder.order_number || '1045'}</h3>
+                <h3 className="drawer-order-id">#SVR{activeOrder.order_number || '-'}</h3>
                 {getStatusBadge(activeOrder.status || 'preparing')}
               </div>
 
@@ -596,7 +608,7 @@ Total: ₹${Number(activeOrder.total || 0).toFixed(2)}
                     <Utensils size={13} className="meta-icon" />
                     <span className="meta-label">Table</span>
                   </div>
-                  <b className="meta-val">{activeOrder.table_label || 'T03'}</b>
+                  <b className="meta-val">{activeOrder.table_label || '-'}</b>
                 </div>
 
                 <div className="meta-col">
@@ -615,8 +627,26 @@ Total: ₹${Number(activeOrder.total || 0).toFixed(2)}
                   <b className="meta-val">
                     {activeOrder.created_at
                       ? new Date(activeOrder.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-                      : '12:38 PM'}
+                      : '-'}
                   </b>
+                </div>
+              </div>
+
+              {/* Customer who placed the order */}
+              <div className="drawer-customer-strip">
+                <div className="meta-col">
+                  <div className="meta-icon-label-row">
+                    <User size={13} className="meta-icon" />
+                    <span className="meta-label">Customer</span>
+                  </div>
+                  <b className="meta-val">{activeOrder.customer_name || 'Guest'}</b>
+                </div>
+                <div className="meta-col">
+                  <div className="meta-icon-label-row">
+                    <Phone size={13} className="meta-icon" />
+                    <span className="meta-label">Phone</span>
+                  </div>
+                  <b className="meta-val">{activeOrder.customer_phone || 'Not provided'}</b>
                 </div>
               </div>
 
@@ -643,8 +673,9 @@ Total: ₹${Number(activeOrder.total || 0).toFixed(2)}
                           <div className="dish-thumb-frame">
                             <img
                               src={dishImg}
-                              alt={item.item_name}
+                              alt=""
                               className="dish-photo-img"
+                              onError={e => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden'; }}
                             />
                           </div>
                           <div className="dish-details-col">
