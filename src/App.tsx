@@ -6611,6 +6611,7 @@ function CustomerPage({
       } catch { }
       setIdempotencyKey(crypto.randomUUID());
       setCart([]);
+      setCartSheetOpen(false);
       notify(setNotice, 'Order sent to the kitchen!', 'success');
     } catch (e: any) {
       notify(setNotice, e?.message || 'Could not place your order. Please try again.', 'error');
@@ -7688,7 +7689,7 @@ function CustomerPage({
                   type="button"
                   className="menu-cart-pill-btn"
                   onClick={() => {
-                    if (window.matchMedia('(max-width: 640px)').matches) { setCartSheetOpen(true); return; }
+                    if (window.matchMedia('(max-width: 1024px)').matches) { setCartSheetOpen(true); return; }
                     const el = document.getElementById('sticky-order-panel');
                     if (el) el.scrollIntoView({ behavior: 'smooth' });
                   }}

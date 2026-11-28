@@ -6363,9 +6363,8 @@ body.app-route #demo {
     flex-direction: column;
   }
 
-  .sticky-order-panel {
-    width: 100%;
-    position: static;
+  .sticky-order-panel:not(.sheet-open) {
+    display: none !important;
   }
 
   .food-items-4col-grid {
@@ -6507,11 +6506,8 @@ body.app-route #demo {
     height: 140px !important;
   }
 
-  .sticky-order-panel {
-    width: 100% !important;
-    max-width: 100% !important;
-    box-sizing: border-box !important;
-    position: static !important;
+  .sticky-order-panel:not(.sheet-open) {
+    display: none !important;
   }
 
   .order-summary-3col-bar {
